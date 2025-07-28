@@ -2,7 +2,7 @@
   pk: 1
   fields:
     name: LarpManager
-    domain: larpmanager.com
+    domain: larpmanager.cpularp.com
 - model: larpmanager.associationskin
   pk: 2
   fields:
