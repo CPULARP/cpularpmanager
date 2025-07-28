@@ -44,6 +44,8 @@ class AssociationIdentifyMiddleware:
         host = request.get_host().split(":")[0]
         domain = host.split(".")[0]
         base_domain = ".".join(host.split(".")[-2:])
+        #base_domain = ".".join(host.split(".")[1:])
+        #print("larpmanager/middleware/association.py: initial base_domain:",base_domain)
 
         if os.getenv("env") == "prod":
             request.enviro = "prod"
@@ -57,7 +59,9 @@ class AssociationIdentifyMiddleware:
                 request.enviro = "test"
 
             # base_domain = "ludomanager.it"
-            base_domain = "larpmanager.com"
+            # base_domain = "larpmanager.com"
+            # base_domain = "cpularp.com"
+            base_domain = "larpmanager.cpularp.com"
 
         conf_slug = getattr(conf_settings, "SLUG_ASSOC", None)
 
