@@ -178,7 +178,10 @@ class MyPasswordResetForm(PasswordResetForm):
         subject = "".join(subject.splitlines())
         body = loader.render_to_string(email_template_name, context)
 
-        assoc_slug = context["domain"].replace("larpmanager.com", "").strip(".").strip()
+        # Parser for the subdomain to slug is incorrect here. Should grab the "first" element from a dot separated string.
+        # This doesn't fully work for "self-hosted" larp manager instances which may have hard coded "slugs". - Jeff
+        # assoc_slug = context["domain"].replace("larpmanager.com", "").strip(".").strip()
+        assoc_slug = context["domain"].split('.')[0]
         assoc = None
         if assoc_slug:
             assoc = Association.objects.get(slug=assoc_slug)
