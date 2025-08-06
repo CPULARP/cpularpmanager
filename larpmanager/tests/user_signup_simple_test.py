@@ -17,7 +17,7 @@
 # commercial@larpmanager.com
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Proprietary
-
+import asyncio
 import re
 from pathlib import Path
 
@@ -55,7 +55,7 @@ async def user_signup_simple(live_server, page):
 
 async def signup(live_server, page):
     # sign up
-    await page.get_by_role("link", name="Home").click()
+    await go_to(page, live_server, "/")
     await expect(page.locator("#one")).to_contain_text("Registration is open!")
     await page.get_by_role("link", name="Registration is open!").click()
     await page.get_by_role("button", name="Continue").click()
@@ -68,6 +68,7 @@ async def signup(live_server, page):
     await go_to(page, live_server, "/test/1/manage/registrations")
     await page.locator("a:has(i.fas.fa-edit)").click()
     await page.get_by_role("link", name="Delete").click()
+    await asyncio.sleep(2)
     await page.get_by_role("button", name="Confirmation delete").click()
 
     # sign up, confirm profile
@@ -137,7 +138,7 @@ async def pre_register(live_server, page):
     await page.locator("#id_pre_register_active").check()
     await page.get_by_role("button", name="Confirm", exact=True).click()
 
-    await page.get_by_role("link", name="Home").click()
+    await go_to(page, live_server, "/")
     await expect(page.locator("#one")).to_contain_text("Registration not yet open!")
     await expect(page.locator("#one")).to_contain_text("Pre-register to the event!")
     await page.get_by_role("link", name="Pre-register to the event!").click()

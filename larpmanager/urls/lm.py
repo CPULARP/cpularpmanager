@@ -51,6 +51,11 @@ urlpatterns = [
         name="usage",
     ),
     path(
+        "demo/",
+        views_lm.demo,
+        name="demo",
+    ),
+    path(
         "about-us/",
         views_lm.about_us,
         name="about_us",
@@ -131,11 +136,6 @@ urlpatterns = [
         name="activate_feature_event",
     ),
     path(
-        "change_language/",
-        views_lm.change_language,
-        name="change_language",
-    ),
-    path(
         "toggle_sidebar/",
         views_lm.toggle_sidebar,
         name="toggle_sidebar",
@@ -174,5 +174,10 @@ urlpatterns = [
         "debug/<slug:s>/",
         views_lm.debug_slug,
         name="debug_slug",
+    ),
+    path(
+        "debug/user/<int:s>/",
+        views_lm.debug_user,
+        name="debug_user",
     ),
 ]

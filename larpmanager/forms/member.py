@@ -43,6 +43,7 @@ from larpmanager.cache.feature import get_assoc_features
 from larpmanager.forms.base import BaseAccForm, MyForm
 from larpmanager.forms.utils import AssocMemberS2Widget, AssocMemberS2WidgetMulti, DatePickerInput
 from larpmanager.models.association import Association, MemberFieldType
+from larpmanager.models.base import FeatureNationality
 from larpmanager.models.member import Badge, Member, Membership, VolunteerRegistry, get_user_membership
 from larpmanager.utils.common import FileTypeValidator, get_recaptcha_secrets
 from larpmanager.utils.tasks import my_send_mail
@@ -115,9 +116,10 @@ class MyRegistrationFormUniqueEmail(RegistrationFormUniqueEmail):
 
         if not conf_settings.DEBUG and not os.getenv("PYTEST_CURRENT_TEST"):
             public, private = get_recaptcha_secrets(self.request)
-            self.fields["captcha"] = ReCaptchaField(
-                widget=ReCaptchaV3, label="Captcha", public_key=public, private_key=private
-            )
+            if public and private:
+                self.fields["captcha"] = ReCaptchaField(
+                    widget=ReCaptchaV3, label="Captcha", public_key=public, private_key=private
+                )
 
         # place language as first
         new_order = ["lang"] + [key for key in self.fields if key != "lang"]
@@ -199,6 +201,19 @@ class MyPasswordResetForm(PasswordResetForm):
 
 class AvatarForm(forms.Form):
     image = forms.ImageField(label="Select an image")
+
+
+class LanguageForm(forms.Form):
+    language = forms.ChoiceField(
+        choices=conf_settings.LANGUAGES,
+        label=_("Select Language"),
+        widget=forms.Select(attrs={"class": "form-control"}),
+    )
+
+    def __init__(self, *args, **kwargs):
+        current_lang = kwargs.pop("current_language")
+        super().__init__(*args, **kwargs)
+        self.fields["language"].initial = current_lang
 
 
 # noinspection PyUnresolvedReferences
@@ -325,7 +340,6 @@ class ProfileForm(BaseProfileForm):
     class Meta:
         model = Member
         fields = (
-            "language",
             "name",
             "surname",
             "legal_name",
@@ -592,6 +606,9 @@ class ExeProfileForm(MyForm):
             )
 
             self.initial[slug] = init
+
+        if self.instance.nationality != FeatureNationality.ITALY:
+            self.delete_field("fiscal_code")
 
     @staticmethod
     def get_members_fields():

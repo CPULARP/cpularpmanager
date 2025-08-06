@@ -189,7 +189,7 @@ class ExeAppearanceForm(MyCssForm):
 
     page_info = _(
         "This page allows you to change the appearance settings and presentation of the "
-        "management system for your Organization."
+        "management system for your Organization"
     )
 
     class Meta:
@@ -224,10 +224,8 @@ class ExeFeatureForm(FeatureForm):
     page_title = _("Features")
 
     page_info = _(
-        "This page allows you to select the features activated for the organization, and all its events. Click on a feature to show its description."
+        "This page allows you to select the features activated for the organization, and all its events (click on a feature to show its description)"
     )
-
-    load_js = ["feature_checkbox"]
 
     class Meta:
         model = Association
@@ -265,11 +263,14 @@ class ExeConfigForm(ConfigForm):
 
     def set_configs(self):
         # CALENDAR
-        self.set_section("calendar", _("Calendar"))
+        self.set_section("interface", _("Interface"))
 
-        label = _("Show event links")
-        help_text = _("If checked: shows a link to the event in the navigation bar")
-        self.add_configs("calendar_show_event", ConfigType.BOOL, label, help_text)
+        label = _("Old interface")
+        help_text = _("If checked: uses old interface")
+        self.add_configs("interface_old", ConfigType.BOOL, label, help_text)
+
+        # CALENDAR
+        self.set_section("calendar", _("Calendar"))
 
         label = _("Past events")
         help_text = _("If checked: shows a link in the calendar to past events")
@@ -299,19 +300,13 @@ class ExeConfigForm(ConfigForm):
         help_text = _("If checked: shows the tagline for each event")
         self.add_configs("calendar_tagline", ConfigType.BOOL, label, help_text)
 
-        # USERS
-        self.set_section("users", _("Users"))
-
-        label = _("Event history")
-        help_text = _("If checked: in the public page of an user shows a list of all events attended")
-        self.add_configs("player_larp_history", ConfigType.BOOL, label, help_text)
-
         # MAIL
         self.set_section("email", _("Email notifications"))
 
-        label = _("Carbon copy")
-        help_text = _("If checked: Sends the main mail a copy of all mails sent to players")
-        self.add_configs("mail_cc", ConfigType.BOOL, label, help_text)
+        if self.instance.main_mail:
+            label = _("Carbon copy")
+            help_text = _("If checked: Sends the main mail a copy of all mails sent to players")
+            self.add_configs("mail_cc", ConfigType.BOOL, label, help_text)
 
         label = _("New signup")
         help_text = _("If checked: Send an email notification to the organisers for new signups")
@@ -381,6 +376,13 @@ class ExeConfigForm(ConfigForm):
             self.add_configs("campaign_switch", ConfigType.BOOL, label, help_text)
 
     def set_config_members(self):
+        # USERS
+        self.set_section("users", _("Users"))
+
+        label = _("Event history")
+        help_text = _("If checked: in the public page of an user shows a list of all events attended")
+        self.add_configs("player_larp_history", ConfigType.BOOL, label, help_text)
+
         if "deadlines" in self.params["features"]:
             self.set_section("deadlines", _("Deadline"))
 
@@ -564,7 +566,7 @@ class ExeConfigForm(ConfigForm):
 class FirstAssociationForm(MyForm):
     class Meta:
         model = Association
-        fields = ("name", "profile", "slug", "main_mail")
+        fields = ("name", "profile", "slug")
         widgets = {
             "slug": SlugInput,
         }

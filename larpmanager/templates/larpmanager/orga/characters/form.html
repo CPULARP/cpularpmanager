@@ -23,7 +23,7 @@
         <hr />
     {% endif %}
     {% include "elements/header/orga.html" %}
-    <table id="character_questions" class="tablesorter mob writing">
+    <table id="character_questions" class="tablesorter writing">
         <thead>
             <tr>
                 <th></th>
@@ -39,13 +39,15 @@
                 {% endif %}
                 <th>{% trans "Options" %}</th>
                 <th></th>
+                <th></th>
             </tr>
         </thead>
         <tbody>
             {% for el in list %}
                 <tr id="{{ el.id }}">
                     <td>
-                        <a href="{% url 'orga_writing_form_edit' run.event.slug run.number typ el.id %}"><i class="fas fa-edit"></i></a>
+                        <a href="{% url 'orga_writing_form_edit' run.event.slug run.number typ el.id %}"
+                           qtip="{% trans "Edit" %}"><i class="fas fa-edit"></i></a>
                     </td>
                     <td>{{ el.display }}</td>
                     <td>{{ el.description | truncatechars:50 }}</td>
@@ -63,8 +65,15 @@
                     </td>
                     <td>
                         {% if not forloop.first %}
-                            <a href="{% url 'orga_writing_form_order' run.event.slug run.number typ el.id %}">
+                            <a href="{% url 'orga_writing_form_order' run.event.slug run.number typ el.id 0 %}">
                                 <i class="fa-solid fa-arrow-up"></i>
+                            </a>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if not forloop.last %}
+                            <a href="{% url 'orga_writing_form_order' run.event.slug run.number typ el.id 1 %}">
+                                <i class="fa-solid fa-arrow-down"></i>
                             </a>
                         {% endif %}
                     </td>

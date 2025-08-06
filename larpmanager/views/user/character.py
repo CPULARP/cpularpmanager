@@ -17,8 +17,10 @@
 # commercial@larpmanager.com
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Proprietary
-
+import ast
+import json
 import os
+import time
 from uuid import uuid4
 
 from django.conf import settings as conf_settings
@@ -34,7 +36,8 @@ from django.utils.translation import gettext_lazy as _
 from django.views.decorators.http import require_POST
 from PIL import Image
 
-from larpmanager.cache.character import get_character_cache_fields, get_character_fields, get_event_cache_all
+from larpmanager.cache.character import get_character_element_fields, get_event_cache_all
+from larpmanager.cache.config import save_single_config
 from larpmanager.forms.character import (
     CharacterForm,
 )
@@ -50,7 +53,6 @@ from larpmanager.forms.writing import (
 from larpmanager.models.event import EventTextType
 from larpmanager.models.form import (
     QuestionApplicable,
-    QuestionType,
     WritingOption,
     WritingQuestion,
 )
@@ -86,11 +88,15 @@ from larpmanager.views.user.registration import init_form_submitted
 
 def character(request, s, n, num):
     ctx = get_event_run(request, s, n, status=True)
-
-    ctx["screen"] = True
     get_char_check(request, ctx, num)
 
-    if "check" not in ctx and not ctx["show_char"]:
+    return _character_sheet(request, ctx)
+
+
+def _character_sheet(request, ctx):
+    ctx["screen"] = True
+
+    if "check" not in ctx and not ctx["show_character"]:
         messages.warning(request, _("Characters are not visible at the moment"))
         return redirect("gallery", s=ctx["event"].slug, n=ctx["run"].number)
 
@@ -104,7 +110,7 @@ def character(request, s, n, num):
         get_character_relationships(ctx)
         ctx["intro"] = get_event_text(ctx["event"].id, EventTextType.INTRO)
     else:
-        get_character_fields(ctx, only_visible=True)
+        ctx["char"].update(get_character_element_fields(ctx, ctx["char"]["id"], only_visible=True))
 
     casting_details(ctx, 0)
     if ctx["casting_show_pref"] and not ctx["char"]["player_id"]:
@@ -113,6 +119,25 @@ def character(request, s, n, num):
     ctx["approval"] = ctx["event"].get_config("user_character_approval", False)
 
     return render(request, "larpmanager/event/character.html", ctx)
+
+
+def character_external(request, s, n, code):
+    ctx = get_event_run(request, s, n)
+
+    if not ctx["event"].get_config("writing_external_access", False):
+        raise Http404("external access not active")
+
+    try:
+        char = ctx["event"].get_elements(Character).get(access_token=code)
+    except ObjectDoesNotExist as err:
+        raise Http404("invalid code") from err
+
+    get_event_cache_all(ctx)
+    ctx["char"] = ctx["chars"][char.number]
+    ctx["character"] = char
+    ctx["check"] = 1
+
+    return _character_sheet(request, ctx)
 
 
 def character_your_link(ctx, char, p=None):
@@ -298,7 +323,9 @@ def character_list(request, s, n):
     char_add_addit(ctx)
     for el in ctx["list"]:
         if "character" in ctx["features"]:
-            el.fields = get_character_cache_fields(ctx, el.id, only_visible=True)
+            res = get_character_element_fields(ctx, el.id, only_visible=True)
+            el.fields = res["fields"]
+            ctx.update(res)
 
     ctx["char_maximum"] = check_character_maximum(ctx["event"], request.user.member)
     ctx["approval"] = ctx["event"].get_config("user_character_approval", False)
@@ -354,16 +381,7 @@ def character_assign(request, s, n, num):
 
 @login_required
 def character_abilities(request, s, n, num):
-    ctx = get_event_run(request, s, n, signup=True, status=True)
-    event = ctx["event"]
-    if event.parent:
-        event = event.parent
-
-    # check the user can select abilities
-    if not event.get_config("px_user", False):
-        raise Http404("ehm.")
-
-    get_char_check(request, ctx, num, True)
+    ctx = check_char_abilities(n, num, request, s)
 
     ctx["available"] = get_available_ability_px(ctx["character"])
 
@@ -381,7 +399,39 @@ def character_abilities(request, s, n, num):
         typ_id: data["name"] for typ_id, data in sorted(ctx["available"].items(), key=lambda x: x[1]["order"])
     }
 
+    ctx["undo_abilities"] = get_undo_abilities(ctx, request)
+
     return render(request, "larpmanager/event/character/abilities.html", ctx)
+
+
+def check_char_abilities(n, num, request, s):
+    ctx = get_event_run(request, s, n, signup=True, status=True)
+
+    event = ctx["event"]
+    if event.parent:
+        event = event.parent
+
+    # check the user can select abilities
+    if not event.get_config("px_user", False):
+        raise Http404("ehm.")
+
+    get_char_check(request, ctx, num, True)
+
+    return ctx
+
+
+@login_required
+def character_abilities_del(request, s, n, num, id_del):
+    ctx = check_char_abilities(n, num, request, s)
+    undo_abilities = get_undo_abilities(ctx, request)
+    if id_del not in undo_abilities:
+        raise Http404("ability out of undo window")
+
+    ctx["character"].px_ability_list.remove(id_del)
+    ctx["character"].save()
+    messages.success(request, _("Ability removed") + "!")
+
+    return redirect("character_abilities", s=ctx["event"].slug, n=ctx["run"].number, num=ctx["character"].number)
 
 
 def _save_character_abilities(ctx, request):
@@ -404,6 +454,28 @@ def _save_character_abilities(ctx, request):
     ctx["character"].px_ability_list.add(selected_id)
     ctx["character"].save()
     messages.success(request, _("Ability acquired") + "!")
+
+    get_undo_abilities(ctx, request, selected_id)
+
+
+def get_undo_abilities(ctx, request, new_ability_id=None):
+    px_undo = int(ctx["event"].get_config("px_undo", 0))
+    config_name = "added_px"
+    member = request.user.member
+    val = member.get_config(config_name, "{}")
+    added_map = ast.literal_eval(val)
+    current_time = int(time.time())
+    # clean from abilities out of the undo time windows
+    for key in list(added_map.keys()):
+        if added_map[key] < current_time - px_undo * 3600:
+            del added_map[key]
+    # add newly acquired ability and save it
+    if px_undo and new_ability_id:
+        added_map[str(new_ability_id)] = current_time
+        save_single_config(member, config_name, json.dumps(added_map))
+
+    # return map of abilities recently added, with int key
+    return [int(k) for k in added_map.keys()]
 
 
 @login_required

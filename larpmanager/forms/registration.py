@@ -37,7 +37,7 @@ from larpmanager.forms.utils import (
     TicketS2WidgetMulti,
 )
 from larpmanager.models.casting import Trait
-from larpmanager.models.form import QuestionType, RegistrationOption, RegistrationQuestion
+from larpmanager.models.form import QuestionStatus, QuestionType, RegistrationOption, RegistrationQuestion
 from larpmanager.models.registration import (
     Registration,
     RegistrationCharacterRel,
@@ -704,10 +704,7 @@ class OrgaRegistrationTicketForm(MyForm):
 
 
 class OrgaRegistrationSectionForm(MyForm):
-    page_info = _(
-        "This page allows you to add or edit sections in the signup form. You can "
-        "indicate which questions to include in the section."
-    )
+    page_info = _("This page allows you to add or edit sections in the signup form")
 
     page_title = _("Form section")
 
@@ -766,6 +763,20 @@ class OrgaRegistrationQuestionForm(MyForm):
         if "gift" not in self.params["features"]:
             self.delete_field("giftable")
 
+        # Set status help
+        visible_choices = {v for v, _ in self.fields["status"].choices}
+
+        help_texts = {
+            QuestionStatus.OPTIONAL: "The question is shown, and can be filled by the player",
+            QuestionStatus.MANDATORY: "The question needs to be filled by the player",
+            QuestionStatus.DISABLED: "The question is shown, but cannot be changed by the player",
+            QuestionStatus.HIDDEN: "The question is not shown to the player",
+        }
+
+        self.fields["status"].help_text = ", ".join(
+            f"<b>{choice.label}</b>: {text}" for choice, text in help_texts.items() if choice.value in visible_choices
+        )
+
 
 class OrgaRegistrationOptionForm(MyForm):
     page_info = _("This page allows you to add or edit an option in a sign up form question")
@@ -786,7 +797,7 @@ class OrgaRegistrationOptionForm(MyForm):
 
 class OrgaRegistrationQuotaForm(MyForm):
     page_info = _(
-        "This page allows you to add or modify the dynamic instalments with which the player can split the payment."
+        "This page allows you to add or modify the dynamic instalments with which the player can split the payment"
     )
 
     page_title = _("Dynamic rates")

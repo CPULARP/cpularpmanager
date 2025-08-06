@@ -23,6 +23,7 @@ from datetime import datetime, timedelta
 from django import forms
 from django.forms.widgets import Widget
 from django.utils.html import format_html
+from django.utils.safestring import mark_safe
 from django.utils.translation import gettext_lazy as _
 from django_select2 import forms as s2forms
 from tinymce.widgets import TinyMCE
@@ -46,6 +47,7 @@ from larpmanager.models.registration import (
 from larpmanager.models.writing import (
     Character,
     Faction,
+    FactionType,
 )
 
 # defer script loaded by form
@@ -85,8 +87,37 @@ class SlugInput(forms.TextInput):
     template_name = "forms/widgets/slug.html"
 
 
+class RoleCheckboxWidget(forms.CheckboxSelectMultiple):
+    def __init__(self, *args, **kwargs):
+        self.feature_help = kwargs.pop("help_text", {})
+        self.feature_map = kwargs.pop("feature_map", {})
+        super().__init__(*args, **kwargs)
+
+    def render(self, name, value, attrs=None, renderer=None):
+        output = []
+        value = value or []
+
+        know_more = _("click on the icon to open the tutorial")
+
+        for i, (option_value, option_label) in enumerate(self.choices):
+            checkbox_id = f"{attrs.get('id', name)}_{i}"
+            checked = "checked" if str(option_value) in value else ""
+            checkbox_html = f'<input type="checkbox" name="{name}" value="{option_value}" id="{checkbox_id}" {checked}>'
+            link_html = f'{option_label}<a href="#" feat="{self.feature_map.get(option_value, "")}"><i class="fas fa-question-circle"></i></a>'
+            help_text = self.feature_help.get(option_value, "")
+            output.append(f"""
+                <div class="feature_checkbox lm_tooltip">
+                    <span class="hide lm_tooltiptext">{help_text} ({know_more})</span>
+                    {checkbox_html} {link_html}
+                </div>
+            """)
+
+        return mark_safe("\n".join(output))
+
+
 def prepare_permissions_role(form, typ):
     if form.instance and form.instance.number == 1:
+        form.prevent_canc = True
         return
     form.modules = []
     init = []
@@ -94,17 +125,30 @@ def prepare_permissions_role(form, typ):
         init = list(form.instance.permissions.values_list("pk", flat=True))
     for module in FeatureModule.objects.order_by("order"):
         ch = []
+        help_text = {}
+        feature_map = {}
         for el in typ.objects.filter(feature__module=module).order_by("number"):
+            if el.hidden:
+                continue
             if not el.feature.placeholder and el.feature.slug not in form.params["features"]:
                 continue
             ch.append((el.id, _(el.name)))
+            help_text[el.id] = el.descr
+            feature_map[el.id] = el.feature_id
+
         if not ch:
             continue
+
+        label = _(module.name)
+        if "interface_old" in form.params and not form.params["interface_old"]:
+            if module.icon:
+                label = f"<i class='fa-solid fa-{module.icon}'></i> {label}"
+
         form.fields[module.name] = forms.MultipleChoiceField(
             required=False,
             choices=ch,
-            widget=forms.CheckboxSelectMultiple(attrs={"class": "my-checkbox-class"}),
-            label=_(module.name),
+            widget=RoleCheckboxWidget(help_text=help_text, feature_map=feature_map),
+            label=label,
         )
         form.modules.append(module.name)
         form.initial[module.name] = init
@@ -355,6 +399,10 @@ class FactionS2WidgetMulti(s2forms.ModelSelect2MultipleWidget):
 
     def get_queryset(self):
         return self.event.get_elements(Faction)
+
+    def label_from_instance(self, instance):
+        code = {FactionType.PRIM: "P", FactionType.TRASV: "T", FactionType.SECRET: "S"}
+        return f"{instance.name} ({code[instance.typ]})"
 
 
 class AbilityS2WidgetMulti(s2forms.ModelSelect2MultipleWidget):

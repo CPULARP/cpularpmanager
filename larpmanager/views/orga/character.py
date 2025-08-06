@@ -36,7 +36,8 @@ from larpmanager.forms.character import (
     OrgaWritingQuestionForm,
 )
 from larpmanager.forms.utils import EventCharacterS2Widget
-from larpmanager.forms.writing import UploadElementsForm
+from larpmanager.forms.writing import FactionForm, PlotForm, QuestForm, TraitForm, UploadElementsForm
+from larpmanager.models.base import Feature
 from larpmanager.models.form import (
     QuestionApplicable,
     QuestionType,
@@ -44,6 +45,7 @@ from larpmanager.models.form import (
     WritingChoice,
     WritingOption,
     WritingQuestion,
+    _get_writing_mapping,
 )
 from larpmanager.models.utils import strip_tags
 from larpmanager.models.writing import (
@@ -73,7 +75,8 @@ from larpmanager.utils.writing import writing_list, writing_versions, writing_vi
 def orga_characters(request, s, n):
     ctx = check_event_permission(request, s, n, "orga_characters")
     get_event_cache_all(ctx)
-    ctx["user_character_approval"] = ctx["event"].get_config("user_character_approval", False)
+    for config_name in ["user_character_approval", "writing_external_access"]:
+        ctx[config_name] = ctx["event"].get_config(config_name, False)
     if ctx["event"].get_config("show_export", False):
         ctx["export"] = "character"
 
@@ -96,6 +99,11 @@ def _characters_relationships(ctx):
     ctx["relationships"] = {}
     if "relationships" not in ctx["features"]:
         return
+
+    try:
+        ctx["rel_tutorial"] = Feature.objects.get(slug="relationships").tutorial
+    except ObjectDoesNotExist:
+        pass
 
     ctx["TINYMCE_DEFAULT_CONFIG"] = conf_settings.TINYMCE_DEFAULT_CONFIG
     widget = EventCharacterS2Widget(attrs={"id": "new_rel_select"})
@@ -266,7 +274,8 @@ def orga_character_form(request, s, n):
 
 def check_writing_form_type(ctx, typ):
     typ = typ.lower()
-    available = {v: k for k, v in QuestionApplicable.choices if v in ctx["features"]}
+    mapping = _get_writing_mapping()
+    available = {v: k for k, v in QuestionApplicable.choices if mapping[v] in ctx["features"]}
     if typ not in available:
         raise Http404(f"unknown writing form type: {typ}")
     ctx["typ"] = typ
@@ -282,7 +291,7 @@ def orga_writing_form(request, s, n, typ):
 
     if request.method == "POST":
         if request.POST.get("download") == "1":
-            return orga_character_form_download(request, ctx)
+            return orga_character_form_download(ctx)
 
         return upload_elements(request, ctx, WritingQuestion, "character_question", "orga_character_form")
 
@@ -343,10 +352,10 @@ def orga_writing_form_edit(request, s, n, typ, num):
 
 
 @login_required
-def orga_writing_form_order(request, s, n, typ, num):
+def orga_writing_form_order(request, s, n, typ, num, order):
     ctx = check_event_permission(request, s, n, "orga_character_form")
     check_writing_form_type(ctx, typ)
-    exchange_order(ctx, WritingQuestion, num)
+    exchange_order(ctx, WritingQuestion, num, order)
     return redirect("orga_writing_form", s=ctx["event"].slug, typ=typ, n=ctx["run"].number)
 
 
@@ -377,10 +386,10 @@ def writing_option_edit(ctx, num, request, typ):
 
 
 @login_required
-def orga_writing_options_order(request, s, n, typ, num):
+def orga_writing_options_order(request, s, n, typ, num, order):
     ctx = check_event_permission(request, s, n, "orga_character_form")
     check_writing_form_type(ctx, typ)
-    exchange_order(ctx, WritingOption, num)
+    exchange_order(ctx, WritingOption, num, order)
     return redirect(
         "orga_writing_form_edit", s=ctx["event"].slug, n=ctx["run"].number, typ=typ, num=ctx["current"].question_id
     )
@@ -535,12 +544,13 @@ def orga_writing_excel_edit(request, s, n, typ):
         tinymce = True
 
     counter = ""
-    if ctx["question"].max_length:
-        if ctx["question"].typ == "m":
-            name = _("options")
-        else:
-            name = "text length"
-        counter = f'<div class="helptext">{name}: <span class="count"></span> / {ctx["question"].max_length}</div>'
+    if ctx["question"].typ in ["m", "t", "p", "e", "name", "teaser", "text", "title"]:
+        if ctx["question"].max_length:
+            if ctx["question"].typ == "m":
+                name = _("options")
+            else:
+                name = "text length"
+            counter = f'<div class="helptext">{name}: <span class="count"></span> / {ctx["question"].max_length}</div>'
 
     confirm = _("Confirm")
     field = ctx["form"][ctx["field_key"]]
@@ -575,12 +585,19 @@ def orga_writing_excel_submit(request, s, n, typ):
         return JsonResponse({"k": 0})
 
     ctx["auto"] = int(request.POST.get("auto"))
+    if ctx["auto"]:
+        msg = _check_working_ticket(request, ctx, request.POST["token"])
+        if msg:
+            return JsonResponse({"warn": msg})
 
     if ctx["form"].is_valid():
-        ctx["form"].save()
-        response = {"k": 1, "qid": ctx["question"].id, "eid": ctx["element"].id, "update": _get_question_update(ctx)}
-        if ctx["auto"] and "working_ticket" in ctx["features"]:
-            _check_working_ticket(request, ctx, response)
+        obj = ctx["form"].save()
+        response = {
+            "k": 1,
+            "qid": ctx["question"].id,
+            "eid": ctx["element"].id,
+            "update": _get_question_update(ctx, obj),
+        }
         return JsonResponse(response)
     else:
         return JsonResponse({"k": 2, "errors": ctx["form"].errors})
@@ -597,12 +614,22 @@ def _get_excel_form(request, s, n, typ, submit=False):
     ctx["applicable"] = QuestionApplicable.get_applicable_inverse(ctx["writing_typ"])
     element = ctx["event"].get_elements(ctx["applicable"]).get(pk=element_id)
 
+    ctx["elementTyp"] = ctx["applicable"]
+
+    form_mapping = {
+        "character": OrgaCharacterForm,
+        "faction": FactionForm,
+        "plot": PlotForm,
+        "trait": TraitForm,
+        "quest": QuestForm,
+    }
+
     # Init form
-    # TODO correct type given the one supplied
+    form_class = form_mapping.get(typ, OrgaCharacterForm)
     if submit:
-        form = OrgaCharacterForm(request.POST, ctx=ctx, instance=element)
+        form = form_class(request.POST, request.FILES, ctx=ctx, instance=element)
     else:
-        form = OrgaCharacterForm(ctx=ctx, instance=element)
+        form = form_class(ctx=ctx, instance=element)
 
     # Remove question other than the one requested
     keep_key = f"q{question_id}"
@@ -623,7 +650,16 @@ def _get_excel_form(request, s, n, typ, submit=False):
     return ctx
 
 
-def _get_question_update(ctx):
+def _get_question_update(ctx, el):
+    if ctx["question"].typ in [QuestionType.COVER]:
+        return f"""
+                <a href="{el.thumb.url}">
+                    <img src="{el.thumb.url}"
+                         class="character-cover"
+                         alt="character cover" />
+                </a>
+            """
+
     question_key = f"q{ctx['question'].id}"
     question_slug = str(ctx["question"].id)
     if ctx["question"].typ not in QuestionType.get_basic_types():
@@ -631,8 +667,9 @@ def _get_question_update(ctx):
         question_slug = ctx["question"].typ
 
     value = ctx["form"].cleaned_data[question_key]
+
     if ctx["question"].typ in [QuestionType.TEASER, QuestionType.SHEET, QuestionType.EDITOR]:
-        value = strip_tags(value)
+        value = strip_tags(str(value))
 
     if ctx["question"].typ in [QuestionType.MULTIPLE, QuestionType.SINGLE]:
         # get option names
@@ -641,6 +678,7 @@ def _get_question_update(ctx):
         value = ", ".join([display for display in query.values_list("display", flat=True)])
     else:
         # check if it is over the character limit
+        value = str(value)
         limit = conf_settings.FIELD_SNIPPET_LIMIT
         if len(value) > limit:
             value = value[:limit]
@@ -649,11 +687,12 @@ def _get_question_update(ctx):
     return value
 
 
-def _check_working_ticket(request, ctx, response):
+def _check_working_ticket(request, ctx, token):
     # perform normal check, if somebody else has opened the character to edit it
-    writing_edit_working_ticket(request, ctx["typ"], ctx["element"].id, response, False)
-    if "warn" in response:
-        return
+    msg = writing_edit_working_ticket(request, ctx["typ"], ctx["element"].id, token)
 
     # perform check if somebody has opened the same field to edit it
-    writing_edit_working_ticket(request, ctx["typ"], f"{ctx['element'].id}_{ctx['question'].id}", response)
+    if not msg:
+        msg = writing_edit_working_ticket(request, ctx["typ"], f"{ctx['element'].id}_{ctx['question'].id}", token)
+
+    return msg

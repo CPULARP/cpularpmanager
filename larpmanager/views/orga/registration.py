@@ -256,15 +256,20 @@ def _orga_registrations_prepare(ctx, request):
     for t in RegistrationTicket.objects.filter(event=ctx["event"]).order_by("-price"):
         t.emails = []
         ctx["reg_tickets"][t.id] = t
-    ctx["reg_questions"] = {}
+    ctx["reg_questions"] = _get_registration_fields(ctx, request.user.member)
+
+
+def _get_registration_fields(ctx, member):
+    reg_questions = {}
     que = RegistrationQuestion.get_instance_questions(ctx["event"], ctx["features"])
     for q in que:
         if "reg_que_allowed" in ctx["features"] and q.allowed_map[0]:
             run_id = ctx["run"].id
             organizer = run_id in ctx["all_runs"] and 1 in ctx["all_runs"][run_id]
-            if not organizer and request.user.member.id not in q.allowed_map:
+            if not organizer and member.id not in q.allowed_map:
                 continue
-        ctx["reg_questions"][q.id] = q
+        reg_questions[q.id] = q
+    return reg_questions
 
 
 def _orga_registrations_discount(ctx):
@@ -366,6 +371,8 @@ def orga_registrations(request, s, n):
     ctx["download"] = 1
     if ctx["event"].get_config("show_export", False):
         ctx["export"] = "registration"
+
+    ctx["default_fields"] = request.user.member.get_config(f"open_registration_{ctx['event'].id}", "[]")
 
     return render(request, "larpmanager/orga/registration/registrations.html", ctx)
 
@@ -469,6 +476,7 @@ def orga_registrations_edit(request, s, n, num):
     ctx = check_event_permission(request, s, n, "orga_registrations")
     get_event_cache_all(ctx)
     ctx["orga_characters"] = has_event_permission(ctx, request, ctx["event"].slug, "orga_characters")
+    ctx["continue_add"] = "continue" in request.POST
     if num != 0:
         get_registration(ctx, num)
     if request.method == "POST":
@@ -490,6 +498,9 @@ def orga_registrations_edit(request, s, n, num):
             if "questbuilder" in ctx["features"]:
                 _save_questbuilder(ctx, form, reg)
 
+            if ctx["continue_add"]:
+                return redirect("orga_registrations_edit", s=ctx["event"].slug, n=ctx["run"].number, num=0)
+
             return redirect("orga_registrations", s=ctx["event"].slug, n=ctx["run"].number)
     elif num != 0:
         form = OrgaRegistrationForm(instance=ctx["registration"], ctx=ctx)
@@ -497,6 +508,7 @@ def orga_registrations_edit(request, s, n, num):
         form = OrgaRegistrationForm(ctx=ctx)
 
     ctx["form"] = form
+    ctx["add_another"] = 1
 
     return render(request, "larpmanager/orga/edit.html", ctx)
 

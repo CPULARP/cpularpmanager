@@ -33,6 +33,7 @@ from larpmanager.forms.utils import (
     AssocMemberS2Widget,
     EventCharacterS2WidgetMulti,
     EventWritingOptionS2WidgetMulti,
+    FactionS2WidgetMulti,
     TicketS2WidgetMulti,
     WritingTinyMCE,
 )
@@ -40,12 +41,21 @@ from larpmanager.forms.writing import BaseWritingForm, WritingForm
 from larpmanager.models.experience import AbilityPx, DeliveryPx
 from larpmanager.models.form import (
     QuestionApplicable,
+    QuestionStatus,
     QuestionType,
     QuestionVisibility,
     WritingOption,
     WritingQuestion,
 )
-from larpmanager.models.writing import Character, CharacterStatus, Faction, PlotCharacterRel, Relationship, TextVersion
+from larpmanager.models.writing import (
+    Character,
+    CharacterStatus,
+    Faction,
+    FactionType,
+    PlotCharacterRel,
+    Relationship,
+    TextVersion,
+)
 from larpmanager.utils.edit import save_version
 
 
@@ -69,6 +79,7 @@ class CharacterForm(WritingForm, BaseWritingForm):
             "player",
             "event",
             "status",
+            "access_token",
         ]
 
         widgets = {
@@ -115,6 +126,9 @@ class CharacterForm(WritingForm, BaseWritingForm):
             for key in ["player", "status"]:
                 fields_default.add(key)
                 self.reorder_field(key)
+            if event.get_config("writing_external_access", False):
+                fields_default.add("access_token")
+                self.reorder_field("access_token")
 
         all_fields = set(self.fields.keys()) - fields_default
         for lbl in all_fields - fields_custom:
@@ -131,8 +145,8 @@ class CharacterForm(WritingForm, BaseWritingForm):
                         "Leave the field blank to save your changes and to be able to continue them in "
                         "the future."
                     ),
+                    widget=forms.CheckboxInput(attrs={"class": "checkbox_single"}),
                 )
-                self.fields["propose"].custom_class = "checkbox_single"
 
     def _init_character(self):
         self._init_factions()
@@ -145,14 +159,14 @@ class CharacterForm(WritingForm, BaseWritingForm):
 
         queryset = self.params["run"].event.get_elements(Faction).filter(selectable=True)
 
-        if queryset.count() == 0:
-            return
-
         self.fields["factions_list"] = forms.ModelMultipleChoiceField(
             queryset=queryset,
             widget=s2forms.ModelSelect2MultipleWidget(search_fields=["name__icontains"]),
             required=False,
+            label=_("Factions"),
         )
+
+        self.show_available_factions = _("Show available factions")
 
         self.initial["factions_list"] = []
         if not self.instance.pk:
@@ -180,7 +194,7 @@ class CharacterForm(WritingForm, BaseWritingForm):
             # check only one primary
             prim = 0
             for el in self.cleaned_data["factions_list"]:
-                if el.typ == Faction.PRIM:
+                if el.typ == FactionType.PRIM:
                     prim += 1
 
             if prim > 1:
@@ -196,7 +210,7 @@ class OrgaCharacterForm(CharacterForm):
 
     load_templates = ["char"]
 
-    load_js = ["characters-choices", "characters-relationships"]
+    load_js = ["characters-choices", "characters-relationships", "factions-choices"]
 
     load_form = ["characters-relationships"]
 
@@ -229,6 +243,8 @@ class OrgaCharacterForm(CharacterForm):
             que = self.params["run"].event.get_elements(Character).all()
             choices = [(m.id, m.name) for m in que]
             self.fields["mirror"].choices = [("", _("--- NOT ASSIGNED ---"))] + choices
+
+        self._init_special_fields()
 
     def _init_plots(self):
         if "plot" not in self.params["features"]:
@@ -315,25 +331,19 @@ class OrgaCharacterForm(CharacterForm):
         queryset = self.params["run"].event.get_elements(Faction)
 
         self.fields["factions_list"] = forms.ModelMultipleChoiceField(
-            queryset=queryset,
-            widget=s2forms.ModelSelect2MultipleWidget(search_fields=["name__icontains"]),
-            required=False,
+            queryset=queryset, widget=FactionS2WidgetMulti(), required=False, label=_("Factions")
         )
+        self.fields["factions_list"].widget.set_event(self.params["event"])
+
+        self.show_available_factions = _("Show available factions")
 
         if not self.instance.pk:
             return
 
-        # FACTIONS SHOW TEXT
-        fact_tx = ""
+        # Initial factions values
         self.initial["factions_list"] = []
         for fc in self.instance.factions_list.order_by("number").values_list("id", "number", "name", "text"):
             self.initial["factions_list"].append(fc[0])
-            if fact_tx:
-                fact_tx += '</div><div class="plot">'
-            fact_tx += f"<h4>{fc[2]}</h4>"
-            if fc[3]:
-                fact_tx += "<hr />" + fc[3]
-        self.show_link.append("id_factions_list")
 
     def _save_relationships(self, instance):
         if "relationships" not in self.params["features"]:
@@ -373,8 +383,6 @@ class OrgaCharacterForm(CharacterForm):
             rel = self._get_rel(ch_id, instance, rel_type)
             rel.text = value
             rel.save()
-
-            save_version(rel, TextVersion.RELATIONSHIP, self.params["member"], False)
 
     def _get_rel(self, ch_id, instance, rel_type):
         if rel_type == "direct":
@@ -416,6 +424,21 @@ class OrgaWritingQuestionForm(MyForm):
             or self.params["writing_typ"] != QuestionApplicable.CHARACTER
         ):
             self.delete_field("status")
+        else:
+            visible_choices = {v for v, _ in self.fields["status"].choices}
+
+            help_texts = {
+                QuestionStatus.OPTIONAL: "The question is shown, and can be filled by the player",
+                QuestionStatus.MANDATORY: "The question needs to be filled by the player",
+                QuestionStatus.DISABLED: "The question is shown, but cannot be changed by the player",
+                QuestionStatus.HIDDEN: "The question is not shown to the player",
+            }
+
+            self.fields["status"].help_text = ", ".join(
+                f"<b>{choice.label}</b>: {text}"
+                for choice, text in help_texts.items()
+                if choice.value in visible_choices
+            )
 
         if "print_pdf" not in self.params["features"] or self.params["writing_typ"] == QuestionApplicable.PLOT:
             self.delete_field("printable")
@@ -427,14 +450,31 @@ class OrgaWritingQuestionForm(MyForm):
         # remove visibility from plot
         if self.params["writing_typ"] == QuestionApplicable.PLOT:
             self.delete_field("visibility")
-        # set only private and public visibility if different from character
-        elif self.params["writing_typ"] != QuestionApplicable.CHARACTER:
-            self.fields["visibility"].choices = [
-                (choice.value, choice.label) for choice in QuestionVisibility if choice != QuestionVisibility.SEARCHABLE
-            ]
-            help_text = self.fields["visibility"].help_text
-            updated_help_text = ".".join(help_text.split(".", 1)[1:]).lstrip()
-            self.fields["visibility"].help_text = updated_help_text
+        else:
+            # set only private and public visibility if different from character
+            if self.params["writing_typ"] != QuestionApplicable.CHARACTER:
+                self.fields["visibility"].choices = [
+                    (choice.value, choice.label)
+                    for choice in QuestionVisibility
+                    if choice != QuestionVisibility.SEARCHABLE
+                ]
+
+            visible_choices = {v for v, _ in self.fields["visibility"].choices}
+
+            help_texts = {
+                QuestionVisibility.SEARCHABLE: "Characters can be filtered according to this question",
+                QuestionVisibility.PUBLIC: "The answer to this question is publicly visible",
+                QuestionVisibility.PRIVATE: "The answer to this question is only visible to the player",
+                QuestionVisibility.HIDDEN: "The answer is hidden to all players",
+            }
+
+            self.fields["visibility"].help_text = ", ".join(
+                f"<b>{choice.label}</b>: {text}"
+                for choice, text in help_texts.items()
+                if choice.value in visible_choices
+            )
+
+        self.check_applicable = self.params["writing_typ"]
 
     def _init_type(self):
         # Add type of character question to the available types
@@ -444,10 +484,10 @@ class OrgaWritingQuestionForm(MyForm):
         if self.instance.pk and self.instance.typ:
             already.remove(self.instance.typ)
 
-            basic_type = self.instance.typ in QuestionType.get_basic_types()
+            # basic_type = self.instance.typ in QuestionType.get_basic_types()
             def_type = self.instance.typ in {QuestionType.NAME, QuestionType.TEASER, QuestionType.TEXT}
-            type_feature = self.instance.typ in self.params["features"]
-            self.prevent_canc = not basic_type and def_type or type_feature
+            # type_feature = self.instance.typ in self.params["features"]
+            self.prevent_canc = def_type
         choices = []
         for choice in QuestionType.choices:
             if len(choice[0]) > 1:

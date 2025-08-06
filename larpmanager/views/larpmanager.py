@@ -23,14 +23,16 @@ from datetime import date, datetime, timedelta
 
 from django.conf import settings as conf_settings
 from django.contrib import messages
+from django.contrib.auth import login
 from django.contrib.auth.decorators import login_required
+from django.contrib.auth.models import User
 from django.core.exceptions import ObjectDoesNotExist
 from django.db.models import Count, Min, Sum
 from django.http import Http404, HttpResponseForbidden, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
-from django.utils.translation import activate, override
 from django.utils.translation import gettext_lazy as _
+from django.utils.translation import override
 from django.views.decorators.cache import cache_page
 from django.views.decorators.csrf import csrf_exempt
 from django_ratelimit.decorators import ratelimit
@@ -55,13 +57,14 @@ from larpmanager.models.larpmanager import (
     LarpManagerProfiler,
     LarpManagerTutorial,
 )
-from larpmanager.models.member import MembershipStatus, get_user_membership
+from larpmanager.models.member import Member, MembershipStatus, get_user_membership
 from larpmanager.models.registration import Registration, TicketTier
 from larpmanager.utils.auth import check_lm_admin
 from larpmanager.utils.event import get_event_run
 from larpmanager.utils.exceptions import PermissionError
 from larpmanager.utils.tasks import my_send_mail, send_mail_exec
 from larpmanager.utils.text import get_assoc_text
+from larpmanager.views.user.member import get_user_backend
 
 
 def lm_home(request):
@@ -87,6 +90,7 @@ def ludomanager(ctx, request):
 @csrf_exempt
 def contact(request):
     ctx = {}
+    done = False
     if request.POST:
         form = LarpManagerContact(request.POST, request=request)
         if form.is_valid():
@@ -95,8 +99,11 @@ def contact(request):
                 subj = "LarpManager contact - " + ct
                 body = form.cleaned_data["content"]
                 my_send_mail(subj, body, email)
+                done = True
     else:
         form = LarpManagerContact(request=request)
+        
+    if not done:
         ctx["contact_form"] = form
     return render(request, "larpmanager/larpmanager/contact.html", ctx)
 
@@ -237,15 +244,6 @@ def activate_feature_event(request, s, n, cod, p=None):
     return redirect(reverse(view_name, kwargs={"s": s, "n": n}))
 
 
-def change_language(request):
-    lang_code = request.POST.get("language", "en")
-    activate(lang_code)
-    request.session["django_language"] = lang_code
-    response = JsonResponse({"status": "Language changed", "language": lang_code})
-    response.set_cookie("django_language", lang_code)
-    return response
-
-
 def toggle_sidebar(request):
     key = "is_sidebar_open"
     if key in request.session:
@@ -282,7 +280,7 @@ def ticket(request, s=""):
         form = LarpManagerTicket(request.POST, request=request)
         if form.is_valid():
             for _name, email in conf_settings.ADMINS:
-                subj = "LarpManager ticket"
+                subj = f"LarpManager ticket - {request.assoc['name']}"
                 if s:
                     subj += f" [{s}]"
                 body = f"Email: {form.cleaned_data['email']} <br /><br />"
@@ -333,7 +331,7 @@ def join(request):
         if request.assoc["skin_id"] == 1:
             join_email(assoc)
         # redirect
-        return redirect("after_login", subdomain=assoc.slug, path="manage/quick")
+        return redirect("after_login", subdomain=assoc.slug, path="manage")
 
     return render(request, "larpmanager/larpmanager/join.html", ctx)
 
@@ -457,8 +455,6 @@ def about_us(request):
 
 
 def get_lm_contact(request):
-    # if check and request.assoc["id"] != 0:
-    # return {"red": "https://larpmanager.com" + request.get_full_path()}
     ctx = {"lm": 1, "contact_form": LarpManagerContact(request=request), "platform": "LarpManager"}
     return ctx
 
@@ -575,3 +571,54 @@ def donate(request):
         form = LarpManagerCheck(request=request)
     ctx = {"form": form}
     return render(request, "larpmanager/larpmanager/donate.html", ctx)
+
+
+def debug_user(request, mid):
+    check_lm_admin(request)
+    member = Member.objects.get(pk=mid)
+    login(request, member.user, backend=get_user_backend())
+
+
+@ratelimit(key="ip", rate="5/m", block=True)
+def demo(request):
+    user_agent = request.META.get("HTTP_USER_AGENT", "")
+    if is_suspicious_user_agent(user_agent):
+        return HttpResponseForbidden("Bots not allowed.")
+
+    if request.POST:
+        form = LarpManagerCheck(request.POST, request=request)
+        if form.is_valid():
+            return _create_demo(request)
+    else:
+        form = LarpManagerCheck(request=request)
+    ctx = {"form": form}
+    return render(request, "larpmanager/larpmanager/demo.html", ctx)
+
+
+def _create_demo(request):
+    new_pk = Association.objects.order_by("-pk").values_list("pk", flat=True).first()
+    new_pk += 1
+
+    # create assoc
+    assoc = Association.objects.create(
+        slug=f"test{new_pk}", name="Demo Organization", skin_id=request.assoc["skin_id"], demo=True
+    )
+
+    # create test user
+    user = User.objects.create(email=f"test{new_pk}@demo.it", username=f"test{new_pk}", password="pippo")
+    member = user.member
+    member.name = "Demo"
+    member.surname = "Admin"
+    member.save()
+
+    # Add member to admins
+    (ar, created) = AssocRole.objects.get_or_create(assoc=assoc, number=1, name="Admin")
+    ar.members.add(member)
+    ar.save()
+    el = get_user_membership(member, assoc.id)
+    el.status = MembershipStatus.JOINED
+    el.save()
+
+    login(request, user, backend=get_user_backend())
+
+    return redirect("after_login", subdomain=assoc.slug, path="manage")

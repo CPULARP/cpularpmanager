@@ -32,7 +32,7 @@ from larpmanager.forms.utils import EventCharacterS2Widget
 from larpmanager.models.association import Association
 from larpmanager.models.form import QuestionApplicable, WritingAnswer, WritingChoice, WritingQuestion
 from larpmanager.models.member import Log
-from larpmanager.models.writing import TextVersion
+from larpmanager.models.writing import Plot, PlotCharacterRel, Relationship, TextVersion
 from larpmanager.utils.base import check_assoc_permission
 from larpmanager.utils.common import html_clean
 from larpmanager.utils.event import check_event_permission
@@ -69,6 +69,20 @@ def save_version(el, tp, mb, dl=False):
         tv.text = "\n".join(texts)
     else:
         tv.text = el.text
+
+    if tp == QuestionApplicable.CHARACTER:
+        rels = Relationship.objects.filter(source=el)
+        if rels:
+            tv.text += "\nRelationships\n"
+            for rel in rels:
+                tv.text += f"{rel.target}: {html_clean(rel.text)}\n"
+
+    if tp == QuestionApplicable.PLOT:
+        chars = PlotCharacterRel.objects.filter(plot=el)
+        if chars:
+            tv.text += "\nCharacters\n"
+            for rel in chars:
+                tv.text += f"{rel.character}: {html_clean(rel.text)}\n"
 
     tv.save()
 
@@ -213,6 +227,8 @@ def backend_edit(request, ctx, form_type, eid, afield=None, assoc=False):
         ctx["name"] = str(ctx["el"])
 
     ctx["add_another"] = "add_another" not in ctx or ctx["add_another"]
+    if ctx["add_another"]:
+        ctx["continue_add"] = "continue" in request.POST
 
     return False
 
@@ -282,6 +298,8 @@ def writing_edit(request, ctx, form_type, nm, tp, redr=None):
     ctx["nm"] = nm
     ctx["form"] = form
     ctx["add_another"] = True
+    ctx["continue_add"] = "continue" in request.POST
+    ctx["auto_save"] = not ctx["event"].get_config("writing_disable_auto", False)
 
     _setup_char_finder(ctx)
 
@@ -306,7 +324,9 @@ def _writing_save(ctx, form, form_type, nm, redr, request, tp):
             return JsonResponse({"res": "ko"})
 
     # Normal save
-    p = form.save()
+    p = form.save(commit=False)
+    p.temp = False
+    p.save()
     dl = "delete" in request.POST and request.POST["delete"] == "1"
     if tp:
         save_version(p, tp, request.user.member, dl)
@@ -339,58 +359,48 @@ def writing_edit_save_ajax(form, request, ctx):
     if eid <= 0:
         return res
 
-    # noinspection PyProtectedMember
-    typ = form._meta.model
+    tp = request.POST["type"]
+    token = request.POST["token"]
+    msg = writing_edit_working_ticket(request, tp, eid, token)
+    if msg:
+        res["warn"] = msg
+        return JsonResponse(res)
 
-    # copy fields and save
-    obj = typ.objects.get(pk=eid)
-    obj.temp = True
-    # noinspection PyProtectedMember
-    for f in typ._meta.get_fields():
-        if f.name not in form.cleaned_data:
-            continue
-        if not f.many_to_one and f.related_model:
-            continue
-
-        if f.get_internal_type() == "BooleanField":
-            continue
-
-            # print(f)
-        v = form.cleaned_data[f.name]
-        if not v:
-            continue
-
-        setattr(obj, f.name, v)
-    obj.save()
-
-    if "working_ticket" in ctx["features"]:
-        tp = request.POST["type"]
-        writing_edit_working_ticket(request, tp, eid, res)
+    p = form.save(commit=False)
+    p.temp = True
+    p.save()
 
     return JsonResponse(res)
 
 
-def writing_edit_working_ticket(request, tp, eid, res, add_ticket=True):
+def writing_edit_working_ticket(request, tp, eid, token):
+    # working ticket also for related characters
+    if tp == "plot":
+        obj = Plot.objects.get(pk=eid)
+        for char_id in obj.characters.values_list("pk", flat=True):
+            msg = writing_edit_working_ticket(request, "character", char_id, token)
+            if msg:
+                return msg
+
     now = int(time.time())
     key = writing_edit_cache_key(eid, tp)
     ticket = cache.get(key)
-    mid = request.user.member.id
     if not ticket:
         ticket = {}
     others = []
     ticket_time = 15
     for idx, el in ticket.items():
         (name, tm) = el
-        if idx != mid and now - tm < ticket_time:
+        if idx != token and now - tm < ticket_time:
             others.append(name)
-        if len(others) > 0:
-            warn = _("Warning! Other users are editing this item") + "."
-            warn += " " + _("You cannot work on it at the same time: the work of one of you would be lost") + "."
-            warn += " " + _("List of other users") + ": " + ", ".join(others)
-            res["warn"] = warn
 
-    if not add_ticket:
-        return
+    msg = ""
+    if len(others) > 0:
+        msg = _("Warning! Other users are editing this item") + "."
+        msg += " " + _("You cannot work on it at the same time: the work of one of you would be lost") + "."
+        msg += " " + _("List of other users") + ": " + ", ".join(others)
 
-    ticket[mid] = (str(request.user.member), now)
+    ticket[token] = (str(request.user.member), now)
     cache.set(key, ticket, ticket_time)
+
+    return msg

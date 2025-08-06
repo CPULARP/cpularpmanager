@@ -17,7 +17,7 @@
                 <a href="{% url 'orga_registration_sections_edit' run.event.slug run.number el.section_id %}">{{ el.section }}</a>
             </h1>
         {% endif %}
-        <table class="tablesorter mob writing no_csv">
+        <table class="tablesorter writing no_csv">
             <thead>
                 <tr>
                     <th></th>
@@ -35,6 +35,7 @@
                     {% if features.reg_que_tickets %}
                         <th>{% trans "Tickets" %}</th>
                     {% endif %}
+                    <th></th>
                     <th></th>
                 </tr>
             </thead>
@@ -81,8 +82,15 @@
                     {% if el.section != old_section %}
                         {% define el.section as old_section %}
                     {% else %}
-                        <a href="{% url 'orga_registration_form_order' run.event.slug run.number el.id %}">
+                        <a href="{% url 'orga_registration_form_order' run.event.slug run.number el.id 0 %}">
                             <i class="fa-solid fa-arrow-up"></i>
+                        </a>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if not forloop.last %}
+                        <a href="{% url 'orga_registration_form_order' run.event.slug run.number el.id 1 %}">
+                            <i class="fa-solid fa-arrow-down"></i>
                         </a>
                     {% endif %}
                 </td>

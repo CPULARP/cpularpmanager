@@ -24,6 +24,7 @@ from functools import wraps
 
 from background_task import background
 from django.conf import settings as conf_settings
+from django.core.exceptions import ObjectDoesNotExist
 from django.core.mail import EmailMultiAlternatives, get_connection
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
@@ -88,8 +89,12 @@ def send_mail_exec(players, subj, body, assoc_id=None, run_id=None, reply_to=Non
 
     subj = f"[{obj}] {subj}"
 
+    recipients = players.split(",")
+
+    notify_admins(f"Sending {len(recipients)} - [{obj}]", f"{subj}")
+
     cnt = 0
-    for email in players.split(","):
+    for email in recipients:
         if not email:
             continue
         if email in aux:
@@ -102,7 +107,11 @@ def send_mail_exec(players, subj, body, assoc_id=None, run_id=None, reply_to=Non
 
 @background_auto(queue="mail")
 def my_send_mail_bkg(email_pk):
-    email = Email.objects.get(pk=email_pk)
+    try:
+        email = Email.objects.get(pk=email_pk)
+    except ObjectDoesNotExist:
+        return
+
     if email.sent:
         print("email already sent!")
         return
@@ -151,7 +160,7 @@ def my_send_simple_mail(subj, body, m_email, assoc_id=None, run_id=None, reply_t
         # Assoc confs: to apply
         if assoc_id:
             assoc = Association.objects.get(pk=assoc_id)
-            if assoc.get_config("mail_cc", False):
+            if assoc.get_config("mail_cc", False) and assoc.main_mail:
                 bcc.append(assoc.main_mail)
 
             # See if we have to apply custom mail settings
@@ -254,3 +263,11 @@ def my_send_mail(subj, body, recipient, obj=None, reply_to=None, schedule=0):
     )
 
     my_send_mail_bkg(email.pk, schedule=schedule)
+
+
+def notify_admins(subj, text, exception=None):
+    if exception:
+        tb = "".join(traceback.format_exception(type(exception), exception, exception.__traceback__))
+        text += "\n" + tb
+    for _name, email in conf_settings.ADMINS:
+        my_send_mail(subj, text, email)

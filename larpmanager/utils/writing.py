@@ -20,6 +20,7 @@
 
 import csv
 import io
+import json
 
 from django.core.exceptions import ObjectDoesNotExist
 from django.db.models import Model, Prefetch
@@ -29,7 +30,7 @@ from django.http import HttpResponse, JsonResponse
 from django.shortcuts import render
 from django.utils.translation import gettext_lazy as _
 
-from larpmanager.cache.character import get_event_cache_all
+from larpmanager.cache.character import get_event_cache_all, get_writing_element_fields
 from larpmanager.cache.text_fields import get_cache_text_field
 from larpmanager.forms.writing import UploadElementsForm
 from larpmanager.models.access import get_event_staffers
@@ -48,6 +49,7 @@ from larpmanager.models.writing import (
     replace_chars_all,
 )
 from larpmanager.templatetags.show_tags import show_char, show_trait
+from larpmanager.utils.character import get_character_sheet
 from larpmanager.utils.common import check_field, compute_diff
 from larpmanager.utils.download import download
 from larpmanager.utils.edit import _setup_char_finder
@@ -55,38 +57,35 @@ from larpmanager.utils.upload import upload_elements
 
 
 def orga_list_progress_assign(ctx, typ: type[Model]):
-    if "progress" in ctx["features"]:
-        ctx["progress_steps"] = {}
-        ctx["progress_steps_map"] = {}
-        for el in ProgressStep.objects.filter(event=ctx["event"]).order_by("order"):
-            ctx["progress_steps"][el.id] = str(el)
-            ctx["progress_steps_map"][el.id] = 0
+    features = ctx["features"]
+    event = ctx["event"]
 
-    if "assigned" in ctx["features"]:
-        ctx["assigned"] = {}
-        ctx["assigned_map"] = {}
-        for m in get_event_staffers(ctx["event"]):
-            ctx["assigned"][m.id] = m.show_nick()
-            ctx["assigned_map"][m.id] = 0
+    if "progress" in features:
+        ctx["progress_steps"] = {el.id: str(el) for el in ProgressStep.objects.filter(event=event).order_by("order")}
+        ctx["progress_steps_map"] = {el_id: 0 for el_id in ctx["progress_steps"]}
 
-    if "progress" in ctx["features"] and "assigned" in ctx["features"]:
-        ctx["progress_assigned_map"] = {}
-        for el in ctx["progress_steps"]:
-            for el2 in ctx["assigned"]:
-                ctx["progress_assigned_map"][f"{el}_{el2}"] = 0
+    if "assigned" in features:
+        ctx["assigned"] = {m.id: m.show_nick() for m in get_event_staffers(event)}
+        ctx["assigned_map"] = {m_id: 0 for m_id in ctx["assigned"]}
+
+    if "progress" in features and "assigned" in features:
+        ctx["progress_assigned_map"] = {f"{p}_{a}": 0 for p in ctx["progress_steps"] for a in ctx["assigned"]}
 
     for el in ctx["list"]:
-        # count progress
-        if "progress" in ctx["features"] and el.progress_id:
-            ctx["progress_steps_map"][el.progress_id] += 1
+        pid = el.progress_id
+        aid = el.assigned_id
 
-        if "assigned" in ctx["features"] and el.assigned_id and el.assigned_id in ctx["assigned_map"]:
-            ctx["assigned_map"][el.assigned_id] += 1
+        if "progress" in features and pid in ctx.get("progress_steps_map", {}):
+            ctx["progress_steps_map"][pid] += 1
 
-        if "progress" in ctx["features"] and "assigned" in ctx["features"] and el.progress_id and el.assigned_id:
-            ctx["progress_assigned_map"][f"{el.progress_id}_{el.assigned_id}"] += 1
+        if "assigned" in features and aid in ctx.get("assigned_map", {}):
+            ctx["assigned_map"][aid] += 1
 
-    # noinspection PyProtectedMember
+        if "progress" in features and "assigned" in features:
+            key = f"{pid}_{aid}"
+            if key in ctx.get("progress_assigned_map", {}):
+                ctx["progress_assigned_map"][key] += 1
+
     ctx["typ"] = str(typ._meta).replace("larpmanager.", "")  # type: ignore[attr-defined]
 
 
@@ -184,6 +183,7 @@ def writing_list(request, ctx, typ, nm):
         ctx["writing_typ"] = QuestionApplicable.get_applicable(ctx["label_typ"])
         orga_list_progress_assign(ctx, typ)  # pyright: ignore[reportArgumentType]
         writing_list_text_fields(ctx, text_fields, typ)
+        _prepare_writing_list(ctx, request)
         _setup_char_finder(ctx)
         _get_custom_form(ctx)
 
@@ -257,6 +257,25 @@ def writing_list_text_fields(ctx, text_fields, typ):
             setattr(el, f + "_ln", ln)
 
 
+def _prepare_writing_list(ctx, request):
+    try:
+        name_que = (
+            ctx["event"].get_elements(WritingQuestion).filter(applicable=ctx["writing_typ"], typ=QuestionType.NAME)
+        )
+        ctx["name_que_id"] = name_que.values_list("id", flat=True)[0]
+    except Exception:
+        pass
+
+    model_name = ctx["label_typ"].lower()
+    ctx["default_fields"] = request.user.member.get_config(f"open_{model_name}_{ctx['event'].id}", "[]")
+    if ctx["default_fields"] == "[]":
+        if model_name in ctx["writing_fields"]:
+            lst = [f"q_{el}" for name, el in ctx["writing_fields"][model_name]["ids"].items()]
+            ctx["default_fields"] = json.dumps(lst)
+
+    ctx["auto_save"] = not ctx["event"].get_config("writing_disable_auto", False)
+
+
 def writing_list_plot(ctx):
     ctx["chars"] = {}
     for el in PlotCharacterRel.objects.filter(character__event=ctx["event"]).select_related("plot", "character"):
@@ -317,6 +336,22 @@ def writing_view(request, ctx, nm):
     ctx["el"].data = ctx["el"].show_complete()
     ctx["nm"] = nm
     get_event_cache_all(ctx)
+
+    if nm == "character":
+        if ctx["el"].number in ctx["chars"]:
+            ctx["char"] = ctx["chars"][ctx["el"].number]
+        ctx["character"] = ctx["el"]
+        get_character_sheet(ctx)
+    else:
+        applicable = QuestionApplicable.get_applicable(nm)
+        if applicable:
+            ctx["element"] = get_writing_element_fields(ctx, "faction", applicable, ctx["el"].id, only_visible=False)
+
+    if nm == "plot":
+        ctx["sheet_plots"] = (
+            PlotCharacterRel.objects.filter(plot=ctx["el"]).order_by("character__number").select_related("character")
+        )
+
     return render(request, "larpmanager/orga/writing/view.html", ctx)
 
 
@@ -326,7 +361,11 @@ def writing_versions(request, ctx, nm, tp):
     for v in ctx["versions"]:
         if last is not None:
             compute_diff(v, last)
+        else:
+            v.diff = v.text.replace("\n", "<br />")
         last = v
+    ctx["element"] = ctx[nm]
+    ctx["typ"] = nm
     return render(request, "larpmanager/orga/writing/versions.html", ctx)
 
 

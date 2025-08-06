@@ -17,12 +17,10 @@
 # commercial@larpmanager.com
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Proprietary
-import traceback
 from datetime import datetime, timedelta
 from typing import Optional
 
 import holidays
-from django.conf import settings as conf_settings
 from django.db.models.signals import m2m_changed, post_save, pre_save
 from django.dispatch import receiver
 from django.template.loader import render_to_string
@@ -58,7 +56,7 @@ def join_email(assoc):
         my_send_mail(subj, body, member, assoc)
 
         activate(member.language)
-        subj = "LarpManager: Need help?"
+        subj = "We'd love your feedback on LarpManager"
         body = render_to_string("mails/help_assoc.html", {"member": member, "assoc": assoc})
         my_send_mail(subj, body, member, assoc, schedule=3600 * 24 * 2)
 
@@ -155,20 +153,36 @@ def bring_friend_instructions(reg, ctx):
     activate(reg.member.language)
     subj = hdr(reg.run.event) + _("Bring a friend to %(event)s") % {"event": reg.run} + "!"
     body = _("Personal code: <b>%(cod)s</b>") % {"cod": reg.special_cod}
-    body += "<br /><br />" + _(
-        "Copy this code and share it with friends! Every friend who signs up  and uses "
-        "this code in the 'Discounts' field will receive %(amount_to)s %(currency)s discount on the "
-        "ticket. For each of them you will receive %(amount_from)s %(currency)s off to use on event "
-        "registration."
-    ) % {
-        "amount_to": ctx["bring_friend_discount_to"],
-        "amount_from": ctx["bring_friend_discount_from"],
-        "currency": reg.run.event.assoc.get_currency_symbol(),
-    }
-    body += "<br /><br />" + _("(check the available number of discounts <a href='%(url)s'>on this page</a>)") % {
-        "url": f"{reg.run.event.slug}/{reg.run.number}/limitations/"
-    }
+    body += (
+        "<br /><br />"
+        + _("Copy this code and share it with friends!")
+        + " "
+        + _(
+            "Every friend who signs up and uses this code in the 'Discounts' field will "
+            "receive %(amount_to)s %(currency)s off the ticket"
+        )
+        % {
+            "amount_to": ctx["bring_friend_discount_to"],
+            "currency": reg.run.event.assoc.get_currency_symbol(),
+        }
+        + ". "
+        + _("For each of them, you will receive %(amount_from)s %(currency)s off your own event registration")
+        % {
+            "amount_from": ctx["bring_friend_discount_from"],
+            "currency": reg.run.event.assoc.get_currency_symbol(),
+        }
+        + "."
+    )
+
+    body += (
+        "<br /><br />"
+        + _("Check the available number of discounts <a href='%(url)s'>on this page</a>")
+        % {"url": f"{reg.run.event.slug}/{reg.run.number}/limitations/"}
+        + "."
+    )
+
     body += "<br /><br />" + _("See you soon") + "!"
+
     my_send_mail(subj, body, reg.member, reg.run)
 
 
@@ -197,12 +211,7 @@ def notify_trait_assigned(sender, instance, created, **kwargs):
         instance.run.event,
     )
     body += "<br/><br />" + _("Access your character <a href='%(url)s'>here</a>") % {"url": url} + "!"
-    if instance.run.get_config("show_text", False):
-        body += "<br/><br />" + _(
-            "Please note that your character sheet may contain  personal secrets, not to be "
-            "shared before the start of the event. To avoid accidentally spoiling your "
-            "experience, do not discuss its content with other participants!"
-        )
+
     custom_message_ass = get_event_text(instance.run.event_id, EventTextType.ASSIGNMENT)
     if custom_message_ass:
         body += "<br />" + custom_message_ass
@@ -249,9 +258,28 @@ def character_update_status(sender, instance, **kwargs):
             my_send_mail(subj, body, instance.player, instance.event)
 
 
-def notify_admins(subj, text, exception=None):
-    if exception:
-        tb = "".join(traceback.format_exception(type(exception), exception, exception.__traceback__))
-        text += "\n" + tb
-    for _name, email in conf_settings.ADMINS:
-        my_send_mail(subj, text, email)
+def notify_organization_exe(subj, body, assoc, instance):
+    if assoc.main_mail:
+        activate(get_exec_language(assoc))
+        my_send_mail(subj, body, assoc.main_mail, instance)
+        return
+
+    for orga in get_assoc_executives(assoc):
+        activate(orga.language)
+        my_send_mail(subj, body, orga.email, instance)
+
+
+def get_exec_language(assoc):
+    # get most common language between organizers
+    langs = {}
+    for orga in get_assoc_executives(assoc):
+        lang = orga.language
+        if lang not in langs:
+            langs[lang] = 1
+        else:
+            langs[lang] += 1
+    if langs:
+        max_lang = max(langs, key=langs.get)
+    else:
+        max_lang = "en"
+    return max_lang

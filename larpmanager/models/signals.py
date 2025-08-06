@@ -36,6 +36,7 @@ from larpmanager.accounting.vat import compute_vat
 from larpmanager.cache.button import event_button_key
 from larpmanager.cache.config import reset_configs
 from larpmanager.cache.feature import get_assoc_features, get_event_features, reset_event_features
+from larpmanager.cache.fields import reset_event_fields_cache
 from larpmanager.models.access import AssocPermission, EventPermission, EventRole, get_event_organizers
 from larpmanager.models.accounting import (
     AccountingItemCollection,
@@ -54,7 +55,7 @@ from larpmanager.models.form import (
     WritingQuestion,
 )
 from larpmanager.models.larpmanager import LarpManagerFaq, LarpManagerTutorial
-from larpmanager.models.member import Member, Membership, MembershipStatus
+from larpmanager.models.member import Member, MemberConfig, Membership, MembershipStatus
 from larpmanager.models.registration import Registration, RegistrationCharacterRel, RegistrationTicket, TicketTier
 from larpmanager.models.writing import Faction, Plot, Prologue, SpeedLarp, replace_chars_all
 from larpmanager.utils.common import copy_class
@@ -328,8 +329,32 @@ def save_event_character_form(features, instance):
     custom_tps = QuestionType.get_basic_types()
 
     _init_character_form_questions(custom_tps, def_tps, features, instance)
-    _init_plot_form_questions(def_tps, instance, features)
     _init_faction_form_questions(def_tps, instance, features)
+    _init_questbuilder_form_questions(def_tps, instance, features)
+    _init_plot_form_questions(def_tps, instance, features)
+
+
+def _init_questbuilder_form_questions(def_tps, instance, features):
+    if "questbuilder" not in features:
+        return
+
+    for applicable in [QuestionApplicable.QUEST, QuestionApplicable.TRAIT]:
+        que = instance.get_elements(WritingQuestion)
+        que = que.filter(applicable=applicable)
+        types = set(que.values_list("typ", flat=True).distinct())
+
+        # add default types if none are present
+        if not types:
+            for el, add in def_tps.items():
+                WritingQuestion.objects.create(
+                    event=instance,
+                    typ=el,
+                    display=_(add[0]),
+                    status=add[1],
+                    visibility=add[2],
+                    max_length=add[3],
+                    applicable=applicable,
+                )
 
 
 def _init_faction_form_questions(def_tps, instance, features):
@@ -362,11 +387,12 @@ def _init_plot_form_questions(def_tps, instance, features):
     que = que.filter(applicable=QuestionApplicable.PLOT)
     types = set(que.values_list("typ", flat=True).distinct())
 
-    def_tps[QuestionType.TEASER] = ("Concept", QuestionStatus.MANDATORY, QuestionVisibility.PUBLIC, 3000)
+    plot_tps = def_tps.copy()
+    plot_tps[QuestionType.TEASER] = ("Concept", QuestionStatus.MANDATORY, QuestionVisibility.PUBLIC, 3000)
 
     # add default types if none are present
     if not types:
-        for el, add in def_tps.items():
+        for el, add in plot_tps.items():
             WritingQuestion.objects.create(
                 event=instance,
                 typ=el,
@@ -495,6 +521,16 @@ def post_delete_reset_run_config(sender, instance, **kwargs):
     reset_configs(instance.run)
 
 
+@receiver(post_save, sender=MemberConfig)
+def post_save_reset_member_config(sender, instance, **kwargs):
+    reset_configs(instance.member)
+
+
+@receiver(post_delete, sender=MemberConfig)
+def post_delete_reset_member_config(sender, instance, **kwargs):
+    reset_configs(instance.member)
+
+
 @receiver(pre_save, sender=Association)
 def pre_save_association_set_skin_features(sender, instance, **kwargs):
     if not instance.skin:
@@ -539,3 +575,13 @@ def post_save_index_tutorial(sender, instance, **kwargs):
 @receiver(post_delete, sender=LarpManagerTutorial)
 def delete_tutorial_from_index(sender, instance, **kwargs):
     delete_index(instance.id)
+
+
+@receiver(post_save, sender=WritingQuestion)
+def save_event_field(sender, instance, created, **kwargs):
+    reset_event_fields_cache(instance.event_id)
+
+
+@receiver(pre_delete, sender=WritingQuestion)
+def delete_event_field(sender, instance, **kwargs):
+    reset_event_fields_cache(instance.event_id)

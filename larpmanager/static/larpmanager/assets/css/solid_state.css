@@ -528,6 +528,11 @@ input[type="datetime_p"]:focus {
     display: none;
 }
 
+.qtip.qtip-lm .qtip-content {
+    font-size: 1.3em;
+    line-height: 1.1;
+}
+
 /*** show_char ***/
 
 .has_show_char {
@@ -1140,19 +1145,16 @@ body.loaded .fade-in {
 
 @media screen and (max-width: 480px) {
 
-    .sheet .plot {
+    .plot {
         padding: 0.5em;
+        background: none;
+        border: none;
     }
 
     .gallery .text {
         margin: 0 !important;
         padding: 0 !important;
     }
-
-    .plot {
-        padding: 0.5em;
-    }
-
     .calendar .event {
         display: block;
     }
@@ -1297,8 +1299,8 @@ body.loaded .fade-in {
     }
 }
 
-.qtip {
- max-width: 280px !important;
+.qtip-char {
+    width: 250px;
 }
 
 .xdsoft_datepicker {

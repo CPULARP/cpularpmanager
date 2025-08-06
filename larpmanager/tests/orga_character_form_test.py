@@ -18,6 +18,8 @@
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Proprietary
 
+import re
+
 import pytest
 from playwright.async_api import async_playwright, expect
 
@@ -120,15 +122,19 @@ async def create_second_char(live_server, page):
     await page.locator("#id_q9").fill("asda")
     await page.get_by_role("button", name="Confirm", exact=True).click()
     await expect(page.locator("#one")).to_contain_text(
-        "Player: User Test Status: Creation Presentation dsfdfsd Text sdfdsfds"
+        "Player: User Test Status: Creation available text: few multiple text: many mandatory: asda Presentation dsfdfsd Text sdfdsfds"
     )
 
 
 async def show_chars(page, live_server):
+    await go_to(page, live_server, "/test/1/manage/config")
+    await page.get_by_role("link", name=re.compile(r"^Writing")).click()
+    await page.locator("#id_writing_field_visibility").check()
+    await page.get_by_role("button", name="Confirm", exact=True).click()
+
     await go_to(page, live_server, "/test/1/manage/run")
-    await page.locator("#id_show_char").check()
-    await page.locator("#id_show_teaser").check()
-    await page.locator("#id_show_text").check()
+    for s in range(0, 13):
+        await page.locator(f"#id_show_character_{s}").check()
     await page.get_by_role("button", name="Confirm", exact=True).click()
 
 
@@ -325,7 +331,7 @@ async def add_field_restricted(page):
     await page.locator('[id="\\38 "]').get_by_role("link", name="").click()
     await page.locator('[id="\\38 "]').get_by_role("link", name="").click()
     await page.get_by_role("link", name="").click()
-    await page.get_by_role("row", name=" few").get_by_role("link").click()
+    await page.locator('[id="\\37 "]').get_by_role("link", name="").click()
     await page.locator("#id_display").click()
     await page.locator("#id_display").fill("w")
     await page.locator("#id_display").press("Home")

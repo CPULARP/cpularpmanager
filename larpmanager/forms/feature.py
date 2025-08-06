@@ -9,16 +9,28 @@ from larpmanager.models.base import Feature, FeatureModule
 
 
 class FeatureCheckboxWidget(forms.CheckboxSelectMultiple):
+    def __init__(self, *args, **kwargs):
+        self.feature_help = kwargs.pop("help_text", {})
+        super().__init__(*args, **kwargs)
+
     def render(self, name, value, attrs=None, renderer=None):
         output = []
         value = value or []
+
+        know_more = _("click on the icon to open the tutorial")
 
         for i, (option_value, option_label) in enumerate(self.choices):
             checkbox_id = f"{attrs.get('id', name)}_{i}"
             checked = "checked" if str(option_value) in value else ""
             checkbox_html = f'<input type="checkbox" name="{name}" value="{option_value}" id="{checkbox_id}" {checked}>'
             link_html = f'{option_label}<a href="#" feat="{option_value}"><i class="fas fa-question-circle"></i></a>'
-            output.append(f'<div class="feature_checkbox">{checkbox_html} {link_html}</div>')
+            help_text = self.feature_help.get(option_value, "")
+            output.append(f"""
+                <div class="feature_checkbox lm_tooltip">
+                    <span class="hide lm_tooltiptext">{help_text} ({know_more})</span>
+                    {checkbox_html} {link_html}
+                </div>
+            """)
 
         return mark_safe("\n".join(output))
 
@@ -37,16 +49,19 @@ class FeatureForm(MyForm):
         if overall:
             modules = modules.filter(Q(nationality__isnull=True) | Q(nationality=self.instance.nationality))
         for module in modules:
-            choices = [
-                (str(feat.id), _(feat.name))
-                for feat in module.features.filter(overall=overall, placeholder=False).order_by("order")
-            ]
+            features = module.features.filter(overall=overall, placeholder=False, hidden=False).order_by("order")
+            choices = [(str(f.id), _(f.name)) for f in features]
+            help_text = {str(f.id): _(f.descr) for f in features}
             if not choices:
                 continue
+            label = _(module.name)
+            if "interface_old" in self.params and not self.params["interface_old"]:
+                if module.icon:
+                    label = f"<i class='fa-solid fa-{module.icon}'></i> {label}"
             self.fields[f"mod_{module.id}"] = forms.MultipleChoiceField(
                 choices=choices,
-                widget=FeatureCheckboxWidget(),
-                label=_(module.name),
+                widget=FeatureCheckboxWidget(help_text=help_text),
+                label=label,
                 required=False,
             )
             if init_features:
@@ -76,7 +91,6 @@ class QuickSetupForm(MyForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.prevent_canc = True
-        self.main_class = "checkbox_single"
 
     def init_fields(self, features):
         # for each value in self.setup, init a field

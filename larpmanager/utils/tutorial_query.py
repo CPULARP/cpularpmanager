@@ -12,11 +12,10 @@ from whoosh.fields import ID, TEXT, Schema
 from whoosh.index import create_in, open_dir
 from whoosh.qparser import QueryParser
 
-from larpmanager.mail.base import notify_admins
 from larpmanager.models.access import AssocPermission, EventPermission
 from larpmanager.models.event import Run
 from larpmanager.models.larpmanager import LarpManagerTutorial
-from larpmanager.utils.tasks import background_auto
+from larpmanager.utils.tasks import background_auto, notify_admins
 
 INDEX_DIR = "data/whoosh_index"
 
@@ -37,11 +36,14 @@ def get_or_create_index(index_dir):
 
 @background_auto(queue="whoosh")
 def index_tutorial(tutorial_id):
+    try:
+        instance = LarpManagerTutorial.objects.get(pk=tutorial_id)
+    except ObjectDoesNotExist:
+        return
+
     ix = get_or_create_index(INDEX_DIR)
     writer = ix.writer()
     writer.delete_by_term("tutorial_id", str(tutorial_id))
-
-    instance = LarpManagerTutorial.objects.get(pk=tutorial_id)
 
     soup = BeautifulSoup(instance.descr, "html.parser")
     for section in soup.find_all(["h2", "h3"]):

@@ -1,5 +1,7 @@
 {% load i18n %}
 
+{% include "elements/writing/token.js" %}
+
 <script>
 
 const tinymceConfig = JSON.parse(document.getElementById('tinymce-config').textContent);
@@ -46,21 +48,37 @@ window.addEventListener('DOMContentLoaded', function() {
                 tinymce.triggerSave();
             }
         }
-        formData = $('#form-excel').serialize();
-        formData += '&eid=' + encodeURIComponent(eid) +
-                    '&qid=' + encodeURIComponent(qid) +
-                    '&auto=' + (auto ? 1 : 0);
+
+        const form = document.getElementById('form-excel');
+        const formData = new FormData(form);
+
+        formData.append('eid', eid);
+        formData.append('qid', qid);
+        formData.append('auto', auto ? 1 : 0);
+        formData.append('token', token);
 
         request = $.ajax({
             url: "{% url 'orga_writing_excel_submit' run.event.slug run.number label_typ %}",
             method: "POST",
             data: formData,
+            contentType: false,
+            processData: false,
             datatype: "json",
         });
 
         request.done(function(res) {
             if (auto) {
-                if (res.warn) alert(res.warn);
+                if (res.warn) {
+                    $.toast({
+                        text: res.warn,
+                        showHideTransition: 'slide',
+                        icon: 'error',
+                        position: 'mid-center',
+                        textAlign: 'center',
+                        allowToastClose: true,
+                        hideAfter: false
+                    });
+                }
                 return;
             }
             // server error
@@ -68,7 +86,7 @@ window.addEventListener('DOMContentLoaded', function() {
             // success
             if (res.k == 1) {
                 closeEdit();
-                $('#' + res.eid + ' [qid=' + res.qid + '] .editable').html(res.update);
+                $('#' + res.eid + ' [qid=' + res.qid + ']').html(res.update);
                 return;
             }
             // form error
@@ -78,19 +96,21 @@ window.addEventListener('DOMContentLoaded', function() {
 
     $(function() {
 
-        submitExcelForm(true);
+        {% if auto_save %}
+            submitExcelForm(true);
+        {% endif %}
 
         // On double click on cell editable, start the single field edit
         $(document).on('dblclick', '.editable', function(event) {
             event.preventDefault();
 
-            eid = $(this).parent().parent().attr("id");
-            qid = $(this).parent().attr("qid");
+            eid = $(this).parent().attr("id");
+            qid = $(this).attr("qid");
 
             request = $.ajax({
                 url: "{% url 'orga_writing_excel_edit' run.event.slug run.number label_typ %}",
                 method: "POST",
-                data: { qid: qid, eid: eid },
+                data: { qid: qid, eid: eid},
                 datatype: "json",
             });
 

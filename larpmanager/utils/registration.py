@@ -48,10 +48,7 @@ def registration_available(r, features=None, reg_counts=None):
     if not reg_counts:
         reg_counts = get_reg_counts(r)
 
-    remaining_pri = r.event.max_pg - reg_counts["count_reg"]
-    for tier in ["staff", "npc"]:
-        if f"count_{tier}" in reg_counts:
-            remaining_pri += reg_counts[f"count_{tier}"]
+    remaining_pri = r.event.max_pg - reg_counts.get("count_player", 0)
 
     if not features:
         features = get_event_features(r.event_id)
@@ -132,7 +129,7 @@ def registration_status_signed(run, features, register_url):
     if "membership" in features:
         if mb.status in [MembershipStatus.EMPTY, MembershipStatus.JOINED, MembershipStatus.UPLOADED]:
             membership_url = reverse("membership")
-            mes = _("to confirm it, send your membership application") + "."
+            mes = _("please upload your membership application to proceed") + "."
             text_url = f", <a href='{membership_url}'>{mes}</a>"
             run.status["text"] = register_text + text_url
             return

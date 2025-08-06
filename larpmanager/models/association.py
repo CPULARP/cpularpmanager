@@ -109,7 +109,11 @@ class Association(BaseModel):
         options={"quality": 90},
     )
 
-    main_mail = models.EmailField(help_text=_("Please indicate an email for the organization"))
+    main_mail = models.EmailField(
+        blank=True,
+        null=True,
+        help_text="(" + _("Optional") + ") " + _("Indicate an organization contact address for sending communications"),
+    )
 
     mandatory_fields = models.CharField(max_length=1000, blank=True)
 
@@ -183,8 +187,8 @@ class Association(BaseModel):
     )
 
     sec_rgb = ColorField(
-        verbose_name=_("Color background"),
-        help_text=_("Indicate the color that will be used for the background of texts"),
+        verbose_name=_("Color highlight"),
+        help_text=_("Indicate the color that will be used to highlight texts"),
         blank=True,
         null=True,
     )
@@ -212,9 +216,15 @@ class Association(BaseModel):
         choices=FeatureNationality.choices,
         blank=True,
         null=True,
+        default="",
         verbose_name=_("Nationality"),
-        help_text=_("Indicate the organization nationality to activate nation-specific features"),
+        help_text="("
+        + _("Optional")
+        + ") "
+        + _("Indicate the organization nationality to activate nation-specific features"),
     )
+
+    demo = models.BooleanField(default=False)
 
     class Meta:
         constraints = [

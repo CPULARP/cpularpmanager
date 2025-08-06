@@ -8,20 +8,23 @@
 {% endblock info %}
 {% block content %}
     {% include "elements/header/writing.html" %}
-    <table id="prologue_types" class="tablesorter mob writing">
+    <table id="prologue_types" class="tablesorter writing">
         <thead>
             <tr>
                 <th></th>
                 <th>{% trans "Name" %}</th>
                 <th>{% trans "Prologues" %}</th>
-                <th>(N)</th>
+                <th>
+                    <i class="fa fa-hashtag"></i>
+                </th>
             </tr>
         </thead>
         <tbody>
             {% for el in list %}
                 <tr id="{{ el.id }}">
                     <td>
-                        <a href="{% url 'orga_prologue_types_edit' run.event.slug run.number el.id %}"><i class="fas fa-edit"></i> </a>
+                        <a href="{% url 'orga_prologue_types_edit' run.event.slug run.number el.id %}"
+                           qtip="{% trans "Edit" %}"><i class="fas fa-edit"></i> </a>
                     </td>
                     <td>{{ el }}</td>
                     <td>

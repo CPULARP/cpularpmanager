@@ -24,8 +24,8 @@ from django.core.exceptions import ValidationError
 from django.forms import Textarea
 from django.utils.translation import gettext_lazy as _
 
-from larpmanager.cache.character import get_character_fields
 from larpmanager.cache.feature import get_event_features, reset_event_features
+from larpmanager.cache.role import has_event_permission
 from larpmanager.forms.base import MyCssForm, MyForm
 from larpmanager.forms.config import ConfigForm, ConfigType
 from larpmanager.forms.feature import FeatureForm, QuickSetupForm
@@ -52,9 +52,11 @@ from larpmanager.models.event import (
     ProgressStep,
     Run,
 )
-from larpmanager.models.form import QuestionType, QuestionVisibility
+from larpmanager.models.form import QuestionType, _get_writing_elements, _get_writing_mapping
+from larpmanager.models.member import Member
 from larpmanager.models.utils import generate_id
 from larpmanager.utils.common import copy_class
+from larpmanager.views.orga.registration import _get_registration_fields
 
 
 class EventCharactersPdfForm(ConfigForm):
@@ -75,7 +77,7 @@ class EventCharactersPdfForm(ConfigForm):
 
 
 class OrgaEventForm(MyForm):
-    page_title = _("Event Settings")
+    page_title = _("Event")
 
     page_info = _("This page allows you to change general event settings")
 
@@ -162,10 +164,8 @@ class OrgaFeatureForm(FeatureForm):
     page_title = _("Event features")
 
     page_info = _(
-        "This page allows you to select the features activated for this event, and all its runs. Click on a feature to show its description."
+        "This page allows you to select the features activated for this event, and all its runs (click on a feature to show its description)"
     )
-
-    load_js = ["feature_checkbox"]
 
     class Meta:
         model = Event
@@ -299,25 +299,26 @@ class OrgaConfigForm(ConfigForm):
         self.add_configs("registration_reg_que_age", ConfigType.BOOL, label, help_text)
 
     def set_config_char_form(self):
-        self.set_section("char_form", _("Character form"))
+        if "character" in self.params["features"]:
+            self.set_section("char_form", _("Character form"))
 
-        label = _("Hide not available")
-        help_text = _(
-            "If checked, options no longer available in the form are hidden, instead of being displayed disabled"
-        )
-        self.add_configs("character_form_hide_unavailable", ConfigType.BOOL, label, help_text)
+            label = _("Hide not available")
+            help_text = _(
+                "If checked, options no longer available in the form are hidden, instead of being displayed disabled"
+            )
+            self.add_configs("character_form_hide_unavailable", ConfigType.BOOL, label, help_text)
 
-        label = _("Maximum available")
-        help_text = _("If checked, an option can be chosen a maximum number of times")
-        self.add_configs("character_form_wri_que_max", ConfigType.BOOL, label, help_text)
+            label = _("Maximum available")
+            help_text = _("If checked, an option can be chosen a maximum number of times")
+            self.add_configs("character_form_wri_que_max", ConfigType.BOOL, label, help_text)
 
-        label = _("Ticket selection")
-        help_text = _("If checked, allows a option to be visible only to players with selected ticket")
-        self.add_configs("character_form_wri_que_tickets", ConfigType.BOOL, label, help_text)
+            label = _("Ticket selection")
+            help_text = _("If checked, allows a option to be visible only to players with selected ticket")
+            self.add_configs("character_form_wri_que_tickets", ConfigType.BOOL, label, help_text)
 
-        label = _("Prerequisites")
-        help_text = _("If checked, allows a option to be visible only if other options are selected")
-        self.add_configs("character_form_wri_que_dependents", ConfigType.BOOL, label, help_text)
+            label = _("Prerequisites")
+            help_text = _("If checked, allows a option to be visible only if other options are selected")
+            self.add_configs("character_form_wri_que_dependents", ConfigType.BOOL, label, help_text)
 
     def set_config_structure(self):
         if "pre_register" in self.params["features"]:
@@ -375,6 +376,12 @@ class OrgaConfigForm(ConfigForm):
             )
             self.add_configs("writing_assigned", ConfigType.BOOL, label, help_text)
 
+            label = _("Field visibility")
+            help_text = _(
+                "Normally all character fields (public or private) are shown; with this configuration you can select which ones to display at any given time"
+            )
+            self.add_configs("writing_field_visibility", ConfigType.BOOL, label, help_text)
+
             label = _("Disable character finder")
             help_text = (
                 _("Disable the system that finds the character number when a special reference symbol is written")
@@ -390,11 +397,15 @@ class OrgaConfigForm(ConfigForm):
             help_text = _("If checked, automatically removes formatting when pasting text into the WYSIWYG editor")
             self.add_configs("writing_paste_text", ConfigType.BOOL, label, help_text)
 
-            label = _("Safe editing")
+            label = _("Disable Auto save")
+            help_text = _("If checked, automatic saving during editing will be disable for writing elements")
+            self.add_configs("writing_disable_auto", ConfigType.BOOL, label, help_text)
+
+            label = _("External access")
             help_text = _(
-                "If checked, prevents multiple users from editing the same item at the same time to avoid conflicts"
+                "If checked, generates secret urls to share the full character sheet with a not signed up user"
             )
-            self.add_configs("writing_working_ticket", ConfigType.BOOL, label, help_text)
+            self.add_configs("writing_external_access", ConfigType.BOOL, label, help_text)
 
     def set_config_character(self):
         if "campaign" in self.params["features"]:
@@ -405,12 +416,19 @@ class OrgaConfigForm(ConfigForm):
 
         if "px" in self.params["features"]:
             self.set_section("px", _("Experience points"))
+
             label = _("Player selection")
             help_text = _(
                 "If checked, players may add abilities themselves, by selecting from those that "
                 "are visible, and whose pre-requisites they meet."
             )
             self.add_configs("px_user", ConfigType.BOOL, label, help_text)
+
+            label = _("Undo period")
+            help_text = _(
+                "Time window (in hours) during which the user can revoke a chosen skill and recover spent XP (default is 0)"
+            )
+            self.add_configs("px_undo", ConfigType.INT, label, help_text)
 
             label = _("Initial experience points")
             help_text = _("Initial value of experience points for all characters")
@@ -764,7 +782,7 @@ class OrgaEventButtonForm(MyForm):
 
 
 class OrgaRunForm(ConfigForm):
-    page_title = _("Run Settings")
+    page_title = _("Run")
 
     page_info = _("This page allows you to change the general settings of this run")
 
@@ -781,6 +799,8 @@ class OrgaRunForm(ConfigForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
+        self.main_class = ""
+
         if "exe" not in self.params:
             self.prevent_canc = True
 
@@ -790,6 +810,7 @@ class OrgaRunForm(ConfigForm):
             self.fields["event"] = forms.ChoiceField(
                 required=True,
                 choices=[(el.id, el.name) for el in Event.objects.filter(assoc_id=self.params["a_id"], template=False)],
+                help_text=_("Select the event of this run "),
             )
             self.fields["event"].widget = EventS2Widget()
             self.fields["event"].widget.set_assoc(self.params["a_id"])
@@ -802,6 +823,16 @@ class OrgaRunForm(ConfigForm):
                 for choice in DevelopStatus
                 if choice not in [DevelopStatus.CANC, DevelopStatus.DONE]
             ]
+        status_text = {
+            DevelopStatus.START: _("Not visible to players"),
+            DevelopStatus.SHOW: _("Available to players in the homepage"),
+            DevelopStatus.DONE: _("Accounting is complete and can be archived"),
+            DevelopStatus.CANC: _("Not active anymore"),
+        }
+        self.fields["development"].help_text = ", ".join(
+            f"<b>{label}</b>: {status_text[DevelopStatus(value)]}"
+            for value, label in self.fields["development"].choices
+        )
 
         for s in ["registration_open", "registration_secret"]:
             if not self.instance.pk or not self.instance.event or s not in self.params["features"]:
@@ -818,67 +849,71 @@ class OrgaRunForm(ConfigForm):
         if "character" not in self.params["features"]:
             return ls
 
-        shows = [
-            (
-                "char",
-                _("Characters"),
-                _("If checked, makes characters visible to all players"),
-            )
-        ]
+        if not self.params["event"].get_config("writing_field_visibility", False):
+            return
+
+        help_text = _(
+            "Selected fields will be displayed as follows: public fields visible to all players, "
+            "private fields visible only to assigned players"
+        )
+
+        shows = _get_writing_elements()
 
         basics = QuestionType.get_basic_types()
-        get_character_fields(self.params, False)
-        for que_id, question in self.params["questions"].items():
-            typ = question["typ"]
-            if typ in basics:
-                typ = f"{que_id}"
-            elif typ not in ["teaser", "text"]:
+        self.set_section("visibility", _("Visibility"))
+        for s in shows:
+            if "writing_fields" not in self.params or s[0] not in self.params["writing_fields"]:
                 continue
+            if s[0] == "plot":
+                continue
+            fields = self.params["writing_fields"][s[0]]["questions"]
+            extra = []
+            for _id, field in fields.items():
+                typ = field["typ"]
+                if typ in basics:
+                    typ = str(field["id"])
 
-            help_text = _("If checked, makes the field content visible to all players")
-            if question["visibility"] == QuestionVisibility.PRIVATE:
-                help_text = _("If checked, makes the field content visible to the assigned player")
+                extra.append((typ, field["display"]))
 
-            shows.append((typ, question["display"], help_text))
+            self.add_configs(f"show_{s[0]}", ConfigType.MULTI_BOOL, s[1], help_text, extra=extra)
 
-        addit_show = [
-            (
-                "faction",
-                _("Factions"),
-                _("If checked, makes factions visible, as the character assignments to factions"),
-            ),
-            (
-                "speedlarp",
-                _("Speedlarp"),
-                _("If checked, makes visible the speedlarp"),
-            ),
-            (
-                "prologue",
-                _("Prologues"),
-                _("If checked, makes prologues visible to the assigned character"),
-            ),
-            ("questbuilder", _("Questbuilder"), _("If checked, makes quests and traits visible")),
-            (
-                "workshop",
-                _("Workshop"),
-                _("If checked, makes workshops visible for players to fill in"),
-            ),
-            (
-                "print_pdf",
-                _("PDF"),
-                _("If checked, makes visible the PDF version of the character sheets"),
-            ),
-        ]
+        shows = []
 
-        for f in addit_show:
-            if self.instance.pk and f[0] in self.params["features"]:
-                shows.append(f)
+        addit_show = {
+            "plot": _("Plots"),
+            "relationships": _("Relationships"),
+            "speedlarp": _("Speedlarp"),
+            "prologue": _("Prologues"),
+            "workshop": _("Workshop"),
+            "print_pdf": _("PDF"),
+        }
+
+        extra = []
+        for key, display in addit_show.items():
+            if self.instance.pk and key in self.params["features"]:
+                extra.append((key, display))
+        if extra:
+            help_text = _("Selected elements will be shown to players")
+            self.add_configs("show_addit", ConfigType.MULTI_BOOL, _("Elements"), help_text, extra=extra)
 
         self.set_section("visibility", _("Visibility"))
         for s in shows:
             self.add_configs(f"show_{s[0]}", ConfigType.BOOL, s[1], s[2])
 
         return ls
+
+    def clean(self):
+        cleaned_data = super().clean()
+        if "end" not in cleaned_data or not cleaned_data["end"]:
+            raise ValidationError({"end": _("You need to define the end date!")})
+
+        if "start" not in cleaned_data or not cleaned_data["start"]:
+            raise ValidationError({"start": _("You need to define the start date!")})
+
+        if cleaned_data["end"] < cleaned_data["start"]:
+            raise ValidationError({"end": _("End date cannot be before start date!")})
+
+        return cleaned_data
 
 
 class OrgaProgressStepForm(MyForm):
@@ -926,10 +961,8 @@ class ExeTemplateForm(FeatureForm):
     page_title = _("Event Template")
 
     page_info = _(
-        "This page allows you to select the features of a template. Click on a feature to show its description."
+        "This page allows you to select the features of a template (click on a feature to show its description)"
     )
-
-    load_js = ["feature_checkbox"]
 
     class Meta:
         model = Event
@@ -1028,3 +1061,125 @@ class OrgaQuickSetupForm(QuickSetupForm):
             )
 
         self.init_fields(get_event_features(self.instance.pk))
+
+
+class OrgaPreferencesForm(ConfigForm):
+    page_title = _("Personal preferences")
+
+    page_info = _("This page allows you to set your personal preferences on the interface")
+
+    class Meta:
+        model = Member
+        fields = ()
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.prevent_canc = True
+        self.show_sections = True
+
+    def set_configs(self):
+        basics = QuestionType.get_basic_types()
+        event_id = self.params["event"].id
+
+        self.set_section("open", "Default fields")
+
+        help_text = _("Select which fields should open automatically when the list is displayed")
+
+        self._add_reg_configs(event_id, help_text)
+
+        # Add writings fields
+        shows = _get_writing_elements()
+        for s in shows:
+            self.add_writing_configs(basics, event_id, help_text, s)
+
+    def _add_reg_configs(self, event_id, help_text):
+        if not has_event_permission(
+            self.params, self.params["request"], self.params["event"].slug, "orga_registrations"
+        ):
+            return
+
+        # Add registration fields
+        extra = []
+        feature_fields = [
+            ("", "#load_accounting", _("Accounting")),
+            ("", "email", _("Email")),
+            ("", "date", _("Chronology")),
+            ("unique_code", "special_cod", _("Unique code")),
+            ("additional_tickets", "additionals", _("Additional")),
+            ("gift", "gift", _("Gift")),
+            ("membership", "membership", _("Member")),
+            ("faction", "factions", _("Factions")),
+            ("custom_character", "custom", _("Customisations")),
+            ("reg_surcharges", "sur", _("Surcharge")),
+            ("discount", "disc", _("Discounts")),
+        ]
+        self.add_feature_extra(extra, feature_fields)
+        fields = _get_registration_fields(self.params, self.params["request"].user.member)
+        max_length = 20
+        if fields:
+            extra.extend(
+                [
+                    (
+                        f".lq_{field_id}",
+                        field.display
+                        if len(field.display) <= max_length
+                        else field.display[: max_length - 5] + " [...]",
+                    )
+                    for field_id, field in fields.items()
+                ]
+            )
+        self.add_configs(
+            f"open_registration_{event_id}", ConfigType.MULTI_BOOL, _("Registrations"), help_text, extra=extra
+        )
+
+    def add_writing_configs(self, basics, event_id, help_text, s):
+        mapping = _get_writing_mapping()
+        if mapping.get(s[0]) not in self.params["features"]:
+            return
+
+        if "writing_fields" not in self.params or s[0] not in self.params["writing_fields"]:
+            return
+
+        if not has_event_permission(self.params, self.params["request"], self.params["event"].slug, f"orga_{s[0]}s"):
+            return
+
+        fields = self.params["writing_fields"][s[0]]["questions"]
+        extra = []
+
+        for _id, field in fields.items():
+            if field["typ"] == "name":
+                continue
+
+            if field["typ"] in basics:
+                tog = f".lq_{field['id']}"
+            else:
+                tog = f"q_{field['id']}"
+
+            extra.append((tog, field["display"]))
+
+        if s[0] == "character":
+            if self.params["event"].get_config("user_character_max", 0):
+                extra.append(("player", _("Player")))
+            if self.params["event"].get_config("user_character_approval", False):
+                extra.append(("status", _("Status")))
+            feature_fields = [
+                ("px", "px", _("XP")),
+                ("plot", "plots", _("Plots")),
+                ("relationships", "relationships", _("Relationships")),
+                ("speedlarp", "speedlarp", _("speedlarp")),
+            ]
+            self.add_feature_extra(extra, feature_fields)
+        elif s[0] in ["faction", "plot"]:
+            extra.append(("characters", _("Characters")))
+        elif s[0] in ["quest", "trait"]:
+            extra.append(("traits", _("Traits")))
+
+        extra.append(("stats", "Stats"))
+
+        self.add_configs(f"open_{s[0]}_{event_id}", ConfigType.MULTI_BOOL, s[1], help_text, extra=extra)
+
+    def add_feature_extra(self, extra, feature_fields):
+        for field in feature_fields:
+            if field[0] and field[0] not in self.params["features"]:
+                continue
+            extra.append((field[1], field[2]))

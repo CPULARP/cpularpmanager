@@ -69,9 +69,9 @@ def orga_registration_tickets_edit(request, s, n, num):
 
 
 @login_required
-def orga_registration_tickets_order(request, s, n, num):
+def orga_registration_tickets_order(request, s, n, num, order):
     ctx = check_event_permission(request, s, n, "orga_registration_tickets")
-    exchange_order(ctx, RegistrationTicket, num)
+    exchange_order(ctx, RegistrationTicket, num, order)
     return redirect("orga_registration_tickets", s=ctx["event"].slug, n=ctx["run"].number)
 
 
@@ -88,9 +88,9 @@ def orga_registration_sections_edit(request, s, n, num):
 
 
 @login_required
-def orga_registration_sections_order(request, s, n, num):
+def orga_registration_sections_order(request, s, n, num, order):
     ctx = check_event_permission(request, s, n, "orga_registration_sections")
-    exchange_order(ctx, RegistrationSection, num)
+    exchange_order(ctx, RegistrationSection, num, order)
     return redirect("orga_registration_sections", s=ctx["event"].slug, n=ctx["run"].number)
 
 
@@ -100,7 +100,7 @@ def orga_registration_form(request, s, n):
 
     if request.method == "POST":
         if request.POST.get("download") == "1":
-            return orga_registration_form_download(request, ctx)
+            return orga_registration_form_download(ctx)
 
         return upload_elements(request, ctx, RegistrationQuestion, "registration_question", "orga_registration_form")
 
@@ -119,7 +119,7 @@ def orga_registration_form(request, s, n):
     )
     ctx["download"] = 1
 
-    ctx["list"] = get_ordered_registration_questions(ctx)
+    ctx["list"] = get_ordered_registration_questions(ctx).prefetch_related("options")
     for el in ctx["list"]:
         el.options_list = el.options.order_by("order")
 
@@ -146,9 +146,9 @@ def orga_registration_form_edit(request, s, n, num):
 
 
 @login_required
-def orga_registration_form_order(request, s, n, num):
+def orga_registration_form_order(request, s, n, num, order):
     ctx = check_event_permission(request, s, n, "orga_registration_form")
-    exchange_order(ctx, RegistrationQuestion, num)
+    exchange_order(ctx, RegistrationQuestion, num, order)
     return redirect("orga_registration_form", s=ctx["event"].slug, n=ctx["run"].number)
 
 
@@ -176,9 +176,9 @@ def registration_option_edit(ctx, num, request):
 
 
 @login_required
-def orga_registration_options_order(request, s, n, num):
+def orga_registration_options_order(request, s, n, num, order):
     ctx = check_event_permission(request, s, n, "orga_registration_form")
-    exchange_order(ctx, RegistrationOption, num)
+    exchange_order(ctx, RegistrationOption, num, order)
     return redirect(
         "orga_registration_form_edit", s=ctx["event"].slug, n=ctx["run"].number, num=ctx["current"].question_id
     )

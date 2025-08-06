@@ -17,6 +17,7 @@
 # commercial@larpmanager.com
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Proprietary
+import asyncio
 
 import pytest
 from playwright.async_api import async_playwright, expect
@@ -55,8 +56,8 @@ async def exe_assoc_role(live_server, page):
     await page.locator("#id_name").press("Tab")
     await page.get_by_role("searchbox").fill("us")
     await page.get_by_role("option", name="User Test -").click()
-    await page.get_by_role("checkbox", name="Configuration").check()
-    await page.get_by_role("checkbox", name="Accounting").check()
+    await page.locator("#id_Organization_2").check()
+    await page.locator("#id_Accounting_0").check()
     await page.get_by_role("button", name="Confirm", exact=True).click()
     await page.get_by_role("gridcell", name="Accounting , Configuration").click()
     await expect(page.locator('[id="\\32 "]')).to_contain_text("Accounting , Configuration")
@@ -65,8 +66,6 @@ async def exe_assoc_role(live_server, page):
     await login_user(page, live_server)
 
     await go_to(page, live_server, "/manage/accounting/")
-    await page.get_by_text("Sidebar Accounting -").click()
-    await page.locator("#sidebar-nav").click()
     await expect(page.locator("#banner")).to_contain_text("Accounting - Organization")
 
     await logout(page, live_server)
@@ -75,6 +74,7 @@ async def exe_assoc_role(live_server, page):
     await go_to(page, live_server, "/manage/roles")
     await page.get_by_role("row", name=" test role User Test").get_by_role("link").click()
     await page.get_by_role("link", name="Delete").click()
+    await asyncio.sleep(2)
     await page.get_by_role("button", name="Confirmation delete").click()
 
     await logout(page, live_server)

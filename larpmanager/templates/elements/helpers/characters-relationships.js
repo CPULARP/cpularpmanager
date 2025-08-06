@@ -19,14 +19,17 @@ window.addEventListener('DOMContentLoaded', function() {
     var already = [];
 
     function addTinyMCETextarea(sel) {
-        let config = Object.assign({}, tinymceConfig);
-        config.selector = sel + ':not(.tinymce-initialized)';
-        config.setup = function (editor) {
-            editor.on('init', function () {
-                editor.getElement().classList.add('tinymce-initialized');
-            });
-        };
-        tinymce.init(config);
+        return new Promise((resolve) => {
+            let config = Object.assign({}, tinymceConfig);
+            config.selector = sel + ':not(.tinymce-initialized)';
+            config.setup = function (editor) {
+                editor.on('init', function () {
+                    editor.getElement().classList.add('tinymce-initialized');
+                    resolve(editor.id);
+                });
+            };
+            tinymce.init(config);
+        });
     }
 
     function add_relationship(ch_id, ch_name) {
@@ -47,11 +50,7 @@ window.addEventListener('DOMContentLoaded', function() {
                     <div class="hide hide_later f_{0}_direct">
                         <textarea name="rel_{0}_direct"></textarea>
                     </div>
-                </td>
-            </tr>
-            <tr>
-                <th>{% trans "Inverse" %}</th>
-                <td>
+                    <div class="helptext">{% trans "How the relationship is described from this character's perspective" %}</div>
                 </td>
             </tr>
         </table>
@@ -59,13 +58,22 @@ window.addEventListener('DOMContentLoaded', function() {
 
         $('#form_relationships').prepend(html);
 
-        addTinyMCETextarea('.f_{0}_direct textarea'.format(ch_id));
+        addTinyMCETextarea('.f_{0}_direct textarea'.format(ch_id)).then((editorId) => {
+            setUpAutoSave(editorId);
+            setUpCharFinder(editorId);
+            setUpHighlight(editorId);
+        });
         already.push(ch_id);
+
     }
 
     $(function() {
         {% for key, item in relationships.items %}
-            addTinyMCETextarea('.f_{{ key }}_direct textarea');
+            addTinyMCETextarea('.f_{{ key }}_direct textarea').then((editorId) => {
+                setUpAutoSave(editorId);
+                setUpCharFinder(editorId);
+                setUpHighlight(editorId);
+            });
             already.push('{{ key }}');
         {% endfor %}
 

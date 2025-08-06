@@ -45,27 +45,42 @@
     {% include "elements/writing/questions_header.html" %}
     {% if features.plot %}
         <th class="hide plots">{% trans "Plots" %}</th>
-        <th class="hide plots">(N)</th>
+        <th class="hide stats">
+            <i class="fa fa-hashtag"></i> {% trans "Plots" %}
+        </th>
     {% endif %}
     {% if features.relationships %}
         <th class="hide relationships">{% trans "Relationships" %}</th>
-        <th class="hide relationships">(N)</th>
+        <th class="hide stats">
+            <i class="fa fa-hashtag"></i> {% trans "Relationships" %}
+        </th>
     {% endif %}
     {% if features.speedlarp %}
         <th class="hide speedlarp">{% trans "Speedlarp" %}</th>
-        <th class="hide speedlarp">(N)</th>
+        <th class="hide stats">
+            <i class="fa fa-hashtag"></i> {% trans "Speedlarp" %}
+        </th>
     {% endif %}
 {% endblock thead %}
 {% block tbody %}
     {% for el in list %}
         <tr id="{{ el.id }}">
             <td>
-                <a href="{% url 'orga_characters_edit' run.event.slug run.number el.id %}"><i class="fas fa-edit"></i></a>
+                <a href="{% url 'orga_characters_edit' run.event.slug run.number el.id %}"
+                   qtip="{% trans "Edit" %}"><i class="fas fa-edit"></i></a>
             </td>
-            <td>{{ el }}</td>
+            <td class="editable" qid="{{ name_que_id }}">{{ el }}</td>
             <td>
-                <a href="{% url 'orga_characters_versions' run.event.slug run.number el.id %}">{% trans "Versions" %}</a> &nbsp;
-                <a href="{% url 'character' run.event.slug run.number el.number %}">{% trans "Gallery" %}</a> &nbsp;
+                <a href="{% url 'orga_characters_view' run.event.slug run.number el.id %}"
+                   qtip="{% trans "View" %}"><i class="fa-solid fa-book-open"></i></a> &nbsp;
+                <a href="{% url 'orga_characters_versions' run.event.slug run.number el.id %}"
+                   qtip="{% trans "Versions" %}"><i class="fas fa-file-alt"></i></a> &nbsp;
+                <a href="{% url 'character' run.event.slug run.number el.number %}"
+                   qtip="{% trans "Gallery" %}"><i class="fa-solid fa-eye"></i></a> &nbsp;
+                {% if writing_external_access %}
+                    <a href="{% url 'character_external' run.event.slug run.number el.access_token %}"
+                       qtip="{% trans "External access" %}"><i class="fa-solid fa-key"></i></a>
+                {% endif %}
             </td>
             {% if user_character_max %}<td class="hide player">{{ el.player.show_nick }}</td>{% endif %}
             {% if user_character_approval %}<td class="hide status">{{ el.get_status_display }}</td>{% endif %}
@@ -81,7 +96,7 @@
                         <a href="{% url 'orga_plots_edit' run.event.slug run.number p.1 %}">{{ p.0 }}</a>
                     {% endfor %}
                 </td>
-                <td class="hide plots">{{ el.plts | length }}</td>
+                <td class="hide stats">{{ el.plts | length }}</td>
             {% endif %}
             {% if features.relationships %}
                 <td class="hide relationships">
@@ -89,7 +104,7 @@
                         <a href="{% url 'orga_characters_edit' run.event.slug run.number rel.target_id %}">{{ rel.target }}</a>
                     {% endfor %}
                 </td>
-                <td class="hide relationships">{{ el.source.count }}</td>
+                <td class="hide stats">{{ el.source.count }}</td>
             {% endif %}
             {% if features.speedlarp %}
                 <td class="hide speedlarp">
@@ -97,7 +112,7 @@
                         <a href="{% url 'orga_speedlarps_edit' run.event.slug run.number p.id %}">{{ p }}</a>
                     {% endfor %}
                 </td>
-                <td class="hide speedlarp">{{ el.speedlarps_list.count }}</td>
+                <td class="hide stats">{{ el.speedlarps_list.count }}</td>
             {% endif %}
         </tr>
     {% endfor %}
@@ -111,7 +126,7 @@
         <div class="nav fields">
             {% for key, que in form_questions.items %}
                 {% if que.typ == 's' or que.typ == 'm' %}
-                    <a href="#" class="load_email_que" key="{{ key }}">{{ que.display | truncatechars:50 }}</a>
+                    <a href="#" class="load_email_que" key="{{ key }}">{{ que.display | truncatechars:25 }}</a>
                     <a href="#" class="my_toggle hide" tog='email_que_{{ key }}'>hidden</a>
                 {% endif %}
             {% endfor %}
@@ -121,7 +136,7 @@
                 <div class="hide email_que_{{ key }}">
                     <br />
                     <h4>{{ que.display }}</h4>
-                    <table class="mob">
+                    <table>
                         <thead>
                             <tr>
                                 <th>Option</th>

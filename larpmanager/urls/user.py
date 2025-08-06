@@ -96,6 +96,11 @@ urlpatterns = [
         name="home_json",
     ),
     path(
+        "language/",
+        views_um.language,
+        name="language",
+    ),
+    path(
         "profile/",
         views_um.profile,
         name="profile",
@@ -385,6 +390,11 @@ urlpatterns = [
         name="character",
     ),
     path(
+        "<slug:s>/<int:n>/character/external/<slug:code>/",
+        views_uc.character_external,
+        name="character_external",
+    ),
+    path(
         "<slug:s>/<int:n>/character/<int:num>/change/",
         views_uc.character_edit,
         name="character_change",
@@ -418,6 +428,11 @@ urlpatterns = [
         "<slug:s>/<int:n>/character/<int:num>/abilities/",
         views_uc.character_abilities,
         name="character_abilities",
+    ),
+    path(
+        "<slug:s>/<int:n>/character/<int:num>/abilities/<int:id_del>/",
+        views_uc.character_abilities_del,
+        name="character_abilities_del",
     ),
     path(
         "<slug:s>/<int:n>/character/<int:num>/assign/",
@@ -703,4 +718,5 @@ urlpatterns = [
         views_base.tutorial_query,
         name="tutorial_query",
     ),
+    path("upload_image/", views_base.upload_image, name="upload_image"),
 ]

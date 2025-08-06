@@ -1,20 +1,23 @@
 {% load i18n %}
 {% if list %}
-    <h2>{{ header }}</h2>
+    <h2 id="{{ typ }}">
+        {% if typ == "priorities" %}
+            <i class="fa-solid fa-triangle-exclamation"></i> {% trans "Priorities" %}
+        {% elif typ == "actions" %}
+            <i class="fa-solid fa-square-check"></i> {% trans "Actions" %}
+        {% elif typ == "suggestions" %}
+            <i class="fa-solid fa-circle-info"></i> {% trans "Suggestions" %}
+        {% endif %}
+    </h2>
     <table>
         {% for obj in list %}
             <tr>
                 <td>
                     {{ obj.text | safe }}:
-                    <a href="{{ obj.href }}" target="_blank">{{ obj.link }}</a>
-                    {% if obj.tutorial %}
-                        (<a href="#"
-   class="feature_tutorial"
-   tut="{{ obj.tutorial }}"
-   target="_blank">Tutorial</a>)
-                    {% endif %}
+                    <a href="{{ obj.href }}">{{ obj.link }}</a>
+                    {% if obj.tutorial %}(<a href="#" class="feature_tutorial" tut="{{ obj.tutorial }}">Tutorial</a>){% endif %}
                 </td>
-                {% if suggestion %}
+                {% if typ == "suggestions" %}
                     <td>
                         <span class="list-close">
                             {% if event %}

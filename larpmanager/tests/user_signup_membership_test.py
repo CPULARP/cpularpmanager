@@ -70,6 +70,7 @@ async def signup(live_server, page):
     await page.locator('#id_payment_methods input[type="checkbox"][value="1"]').check()
     await page.locator("#id_wire_descr").click()
     await page.locator("#id_wire_descr").fill("test wire")
+    await page.locator("#id_wire_fee").fill("0")
     await page.locator("#id_wire_descr").press("Tab")
     await page.locator("#id_wire_payee").fill("test beneficiary")
     await page.locator("#id_wire_payee").press("Tab")
@@ -92,8 +93,8 @@ async def membership(live_server, page):
     # send membership
     await go_to(page, live_server, "/test/1/register")
     await expect(page.locator("#one")).to_contain_text("Provisional registration")
-    await expect(page.locator("#one")).to_contain_text("to confirm it, send your membership application")
-    await page.get_by_role("link", name="to confirm it, send your").click()
+    await expect(page.locator("#one")).to_contain_text("please upload your membership application to proceed")
+    await page.get_by_role("link", name="please upload your membership").click()
     await page.get_by_role("checkbox", name="Authorisation").check()
     await page.get_by_role("button", name="Submit").click()
     # compile request

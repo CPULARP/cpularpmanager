@@ -18,6 +18,7 @@
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Proprietary
 
+
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.shortcuts import redirect, render
@@ -34,16 +35,21 @@ from larpmanager.forms.event import (
     OrgaEventRoleForm,
     OrgaEventTextForm,
     OrgaFeatureForm,
+    OrgaPreferencesForm,
     OrgaQuickSetupForm,
     OrgaRunForm,
 )
 from larpmanager.models.access import EventRole
 from larpmanager.models.base import Feature
+from larpmanager.models.casting import Quest, QuestType, Trait
 from larpmanager.models.event import Event, EventButton, EventText
+from larpmanager.models.registration import Registration
+from larpmanager.models.writing import Character, Faction, Plot
 from larpmanager.utils.common import clear_messages, get_feature
 from larpmanager.utils.deadlines import check_run_deadlines
+from larpmanager.utils.download import export_character_form, export_data, export_registration_form, zip_exports
 from larpmanager.utils.edit import backend_edit, orga_edit
-from larpmanager.utils.event import check_event_permission
+from larpmanager.utils.event import check_event_permission, get_index_event_permissions
 
 
 @login_required
@@ -125,6 +131,8 @@ def orga_features(request, s, n):
             clear_messages(request)
             messages.success(request, msg)
             return redirect(feature.follow_link)
+
+        get_index_event_permissions(ctx, request, s)
         return render(request, "larpmanager/manage/features.html", ctx)
     return render(request, "larpmanager/orga/edit.html", ctx)
 
@@ -190,3 +198,48 @@ def orga_deadlines(request, s, n):
 @login_required
 def orga_quick(request, s, n):
     return orga_edit(request, s, n, "orga_quick", OrgaQuickSetupForm, None, "manage", add_ctx={"add_another": False})
+
+
+@login_required
+def orga_preferences(request, s, n):
+    return orga_edit(
+        request,
+        s,
+        n,
+        "orga_preferences",
+        OrgaPreferencesForm,
+        request.user.member.id,
+        "manage",
+        add_ctx={"add_another": False},
+    )
+
+
+@login_required
+def orga_backup(request, s, n):
+    ctx = check_event_permission(request, s, n, "orga_event")
+
+    return _prepare_backup(ctx)
+
+
+def _prepare_backup(ctx):
+    exports = []
+
+    exports.extend(export_data(ctx, Registration))
+    exports.extend(export_registration_form(ctx))
+
+    if "character" in ctx["features"]:
+        exports.extend(export_data(ctx, Character))
+        exports.extend(export_character_form(ctx))
+
+    if "faction" in ctx["features"]:
+        exports.extend(export_data(ctx, Faction))
+
+    if "plot" in ctx["features"]:
+        exports.extend(export_data(ctx, Plot))
+
+    if "questbuilder" in ctx["features"]:
+        exports.extend(export_data(ctx, QuestType))
+        exports.extend(export_data(ctx, Quest))
+        exports.extend(export_data(ctx, Trait))
+
+    return zip_exports(ctx, exports, "backup")

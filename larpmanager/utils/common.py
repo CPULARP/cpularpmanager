@@ -47,6 +47,7 @@ from larpmanager.models.association import Association
 from larpmanager.models.base import Feature, FeatureModule
 from larpmanager.models.casting import Quest, QuestType, Trait
 from larpmanager.models.event import Event
+from larpmanager.models.experience import update_px
 from larpmanager.models.member import Badge, Member
 from larpmanager.models.miscellanea import (
     Album,
@@ -60,7 +61,7 @@ from larpmanager.models.miscellanea import (
 from larpmanager.models.registration import (
     Registration,
 )
-from larpmanager.models.utils import strip_tags
+from larpmanager.models.utils import my_uuid_short, strip_tags
 from larpmanager.models.writing import (
     Character,
     CharacterConfig,
@@ -247,7 +248,7 @@ def get_speedlarp(ctx, n):
 
     # ~ def get_ord_faction(char):
     # ~ for g in char.factions_list.all():
-    # ~ if g.typ == Faction.PRIM:
+    # ~ if g.typ == FactionType.PRIM:
     # ~ return (g.get_name(), g)
     # ~ return ("UNASSIGNED", None)
 
@@ -342,6 +343,8 @@ def generate_number(length):
 
 
 def html_clean(tx):
+    if not tx:
+        return ""
     tx = strip_tags(tx)
     tx = html.unescape(tx)
     return tx
@@ -502,10 +505,15 @@ def pretty_request(request):
     return f"{request.method} HTTP/1.1\nMeta: {request.META}\n{headers}\n\n{request.body}"
 
 
-def add_char_addit(el):
-    el.addit = {}
-    for config in CharacterConfig.objects.filter(character__id=el.id):
-        el.addit[config.name] = config.value
+def add_char_addit(char):
+    char.addit = {}
+    configs = CharacterConfig.objects.filter(character__id=char.id)
+    if not configs.count():
+        update_px(char)
+        configs = CharacterConfig.objects.filter(character__id=char.id)
+
+    for config in configs:
+        char.addit[config.name] = config.value
 
 
 def remove_choice(lst, trm):
@@ -534,31 +542,43 @@ def round_to_two_significant_digits(number):
     return float(rounded)
 
 
-def exchange_order(ctx, cls, num):
+def exchange_order(ctx, cls, num, order):
     elements = ctx["event"].get_elements(cls)
     # get elements
     current = elements.get(pk=num)
-    order = current.order
-    prev = elements.filter(order__lt=order).order_by("-order")
-    if hasattr(current, "question"):
-        prev = prev.filter(question=current.question)
-    if hasattr(current, "section"):
-        prev = prev.filter(section=current.section)
-    if hasattr(current, "applicable"):
-        prev = prev.filter(applicable=current.applicable)
 
-    if len(prev) == 0:
-        current.order -= 1
+    # order indicates if we have to increase, or reduce, the current_order
+    if order:
+        other = elements.filter(order__gt=current.order).order_by("order")
+    else:
+        other = elements.filter(order__lt=current.order).order_by("-order")
+
+    if hasattr(current, "question"):
+        other = other.filter(question=current.question)
+    if hasattr(current, "section"):
+        other = other.filter(section=current.section)
+    if hasattr(current, "applicable"):
+        other = other.filter(applicable=current.applicable)
+
+    # if not element is found, simply increase / reduce the order
+    if len(other) == 0:
+        if order:
+            current.order += 1
+        else:
+            current.order -= 1
         current.save()
     else:
-        prev = prev.first()
+        other = other.first()
         # exchange ordering
-        current.order = prev.order
-        prev.order = order
-        if current.order == prev.order:
-            prev.order += 1
+        current.order = other.order
+        other.order = current.order
+        if current.order == other.order:
+            if order:
+                other.order -= 1
+            else:
+                other.order += 1
         current.save()
-        prev.save()
+        other.save()
     ctx["current"] = current
 
 
@@ -587,6 +607,10 @@ def copy_class(target_id, source_id, cls):
         obj.event_id = target_id
         # noinspection PyProtectedMember
         obj._state.adding = True
+        for field_name, func in {"access_token": my_uuid_short}.items():
+            if not hasattr(obj, field_name):
+                continue
+            setattr(obj, field_name, func())
         obj.save()
 
         # copy m2m relations
