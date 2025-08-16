@@ -626,6 +626,11 @@ urlpatterns = [
         name="orga_speedlarps_versions",
     ),
     path(
+        "<slug:s>/<int:n>/manage/reading/",
+        views_ow.orga_reading,
+        name="orga_reading",
+    ),
+    path(
         "<slug:s>/<int:n>/manage/expenses/my/",
         views_oa.orga_expenses_my,
         name="orga_expenses_my",
@@ -859,6 +864,16 @@ urlpatterns = [
         "<slug:s>/<int:n>/manage/backup/",
         views_oe.orga_backup,
         name="orga_backup",
+    ),
+    path(
+        "<slug:s>/<int:n>/manage/upload/<slug:typ>/",
+        views_oe.orga_upload,
+        name="orga_upload",
+    ),
+    path(
+        "<slug:s>/<int:n>/manage/upload/template/<slug:typ>/",
+        views_oe.orga_upload_template,
+        name="orga_upload_template",
     ),
     path(
         "<slug:s>/<int:n>/manage/preferences/",

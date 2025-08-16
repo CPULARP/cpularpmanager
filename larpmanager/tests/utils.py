@@ -17,10 +17,13 @@
 # commercial@larpmanager.com
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Proprietary
+import io
 import os
+import zipfile
 from datetime import datetime
 from urllib.parse import urlparse
 
+import pandas as pd
 from playwright.async_api import expect
 
 password = "banana"
@@ -30,7 +33,7 @@ test_user = "user@test.it"
 
 async def page_start(p, show=False):
     browser = await p.chromium.launch(headless=not show)
-    context = await browser.new_context(record_video_dir="test_videos")
+    context = await browser.new_context()
     page = await context.new_page()
 
     page.set_default_timeout(60000)
@@ -52,21 +55,21 @@ async def logout(page, live_server):
     await page.get_by_role("link", name="Logout").click()
 
 
-async def login_orga(pg, ls):
-    await login(pg, ls, orga_user)
+async def login_orga(page, live_server):
+    await login(page, live_server, orga_user)
 
 
-async def login_user(pg, lv):
-    await login(pg, lv, test_user)
+async def login_user(page, live_server):
+    await login(page, live_server, test_user)
 
 
-async def login(pg, live_server, name):
-    await go_to(pg, live_server, "/login")
+async def login(page, live_server, name):
+    await go_to(page, live_server, "/login")
 
-    await pg.locator("#id_username").fill(name)
-    await pg.locator("#id_password").fill(password)
-    await pg.get_by_role("button", name="Submit").click()
-    await expect(pg.locator("#banner")).not_to_contain_text("Login")
+    await page.locator("#id_username").fill(name)
+    await page.locator("#id_password").fill(password)
+    await page.get_by_role("button", name="Submit").click()
+    await expect(page.locator("#banner")).not_to_contain_text("Login")
 
 
 async def handle_error(page, e, test_name):
@@ -75,14 +78,7 @@ async def handle_error(page, e, test_name):
 
     uid = datetime.now().strftime("%Y%m%d_%H%M%S")
     await page.screenshot(path=f"test_screenshots/{test_name}_{uid}.png")
-    try:
-        video_path = await page.video.path()
-        os.rename(video_path, f"test_videos/{test_name}_{uid}.webm")
-    except Exception as ve:
-        print(f"[!] Errore video: {ve}")
 
-    # print("Captured Visible Page Text:\n")
-    # print(print_text(page))
     raise e
 
 
@@ -108,8 +104,19 @@ async def go_to(page, live_server, path):
 
 
 async def go_to_check(page, path):
+    dialog_triggered = False
+
+    def on_dialog(dialog):
+        nonlocal dialog_triggered
+        dialog_triggered = True
+        dialog.dismiss()
+
+    page.on("dialog", on_dialog)
+
     await page.goto(path)
     await ooops_check(page)
+
+    assert not dialog_triggered, "Unexpected JavaScript dialog was triggered"
 
 
 async def submit(page):
@@ -126,27 +133,49 @@ async def ooops_check(page):
         await expect(banner).not_to_contain_text("404")
 
 
-async def check_download(page, link):
+async def check_download(page, link: str) -> None:
     max_tries = 3
     current_try = 0
+
     while current_try < max_tries:
         try:
-            async with page.expect_download(timeout=100000) as download_info:
-                await page.get_by_role("link", name=link).click()
+            async with page.expect_download(timeout=100_000) as download_info:
+                await page.click(f"text={link}")
             download = await download_info.value
             download_path = await download.path()
             assert download_path is not None, "Download failed"
 
             with open(download_path, "rb") as f:
                 content = f.read()
-                print(content[:100])
 
             file_size = os.path.getsize(download_path)
             assert file_size > 0, "File empty"
 
+            # handle zip: extract CSVs, read with pandas
+            if zipfile.is_zipfile(io.BytesIO(content)) or zipfile.is_zipfile(download_path):
+                with zipfile.ZipFile(io.BytesIO(content)) as zf:
+                    csv_members = [m for m in zf.namelist() if m.lower().endswith(".csv")]
+                    assert csv_members, "ZIP contains no CSV files"
+                    for member in csv_members:
+                        with zf.open(member) as f:
+                            df = pd.read_csv(f)
+                            assert not df.empty, f"Empty csv {member}"
+                return
+
+            # if plain CSV, read with pandas
+            lower_name = str(os.path.basename(download.suggested_filename or download_path).lower())
+            if lower_name.endswith(".csv"):
+                df = pd.read_csv(io.BytesIO(content))
+                assert not df.empty, f"Empty csv {lower_name}"
+                return
+
             return
-        except Exception:
+
+        except Exception as err:
+            print(err)
             current_try += 1
+            if current_try >= max_tries:
+                raise
 
 
 async def fill_tinymce(page, iframe_id: str, text: str):
@@ -177,7 +206,7 @@ async def add_links_to_visit(links_to_visit, page, visited_links):
             continue
         if link.endswith(("#", "#menu", "#sidebar", "print")):
             continue
-        if any(s in link for s in ["features", "pdf", "backup"]):
+        if any(s in link for s in ["features", "pdf", "backup", "upload/template"]):
             continue
         parsed_url = urlparse(link)
         if parsed_url.hostname not in ("localhost", "127.0.0.1"):

@@ -19,10 +19,11 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Proprietary
 
 from django.core.cache import cache
-from django.db.models.signals import post_save
+from django.db.models.signals import post_delete, post_save
 from django.dispatch import receiver
 
 from larpmanager.models.access import AssocPermission, EventPermission
+from larpmanager.models.base import Feature, FeatureModule
 
 
 def assoc_permission_feature_key(slug):
@@ -30,14 +31,16 @@ def assoc_permission_feature_key(slug):
 
 
 def update_assoc_permission_feature(slug):
-    feature = AssocPermission.objects.select_related("feature").get(slug=slug).feature
+    perm = AssocPermission.objects.select_related("feature").get(slug=slug)
+    feature = perm.feature
     if feature.placeholder:
         slug = "def"
     else:
         slug = feature.slug
     tutorial = feature.tutorial or ""
-    cache.set(assoc_permission_feature_key(slug), (slug, tutorial))
-    return slug, tutorial
+    config = perm.config or ""
+    cache.set(assoc_permission_feature_key(slug), (slug, tutorial, config))
+    return slug, tutorial, config
 
 
 def get_assoc_permission_feature(slug):
@@ -48,7 +51,12 @@ def get_assoc_permission_feature(slug):
 
 
 @receiver(post_save, sender=AssocPermission)
-def save_event_assoc_permission_reset(sender, instance, **kwargs):
+def post_save_assoc_permission_reset(sender, instance, **kwargs):
+    cache.delete(assoc_permission_feature_key(instance.slug))
+
+
+@receiver(post_delete, sender=AssocPermission)
+def post_delete_assoc_permission_reset(sender, instance, **kwargs):
     cache.delete(assoc_permission_feature_key(instance.slug))
 
 
@@ -57,14 +65,16 @@ def event_permission_feature_key(slug):
 
 
 def update_event_permission_feature(slug):
-    feature = EventPermission.objects.select_related("feature").get(slug=slug).feature
+    perm = EventPermission.objects.select_related("feature").get(slug=slug)
+    feature = perm.feature
     if feature.placeholder:
         slug = "def"
     else:
         slug = feature.slug
     tutorial = feature.tutorial or ""
-    cache.set(event_permission_feature_key(slug), (slug, tutorial))
-    return slug, tutorial
+    config = perm.config or ""
+    cache.set(event_permission_feature_key(slug), (slug, tutorial, config))
+    return slug, tutorial, config
 
 
 def get_event_permission_feature(slug):
@@ -75,5 +85,85 @@ def get_event_permission_feature(slug):
 
 
 @receiver(post_save, sender=EventPermission)
-def save_event_event_permission_reset(sender, instance, **kwargs):
+def post_save_event_permission_reset(sender, instance, **kwargs):
     cache.delete(event_permission_feature_key(instance.slug))
+
+
+@receiver(post_delete, sender=EventPermission)
+def post_delete_event_permission_reset(sender, instance, **kwargs):
+    cache.delete(event_permission_feature_key(instance.slug))
+
+
+def index_permission_key(typ):
+    return f"index_permission_key_{typ}"
+
+
+def update_index_permission(typ):
+    mapping = {"event": EventPermission, "assoc": AssocPermission}
+    que = mapping[typ].objects.select_related("feature", "feature__module")
+    que = que.order_by("feature__module__order", "number")
+    return que.values(
+        "name",
+        "descr",
+        "slug",
+        "hidden",
+        "feature__placeholder",
+        "feature__slug",
+        "feature__module__name",
+        "feature__module__icon",
+    )
+
+
+def get_cache_index_permission(typ):
+    res = cache.get(index_permission_key(typ))
+    if not res:
+        res = update_index_permission(typ)
+    return res
+
+
+def reset_index_permission(typ):
+    cache.delete(index_permission_key(typ))
+
+
+@receiver(post_save, sender=AssocPermission)
+def post_save_assoc_permission_index_permission(sender, instance, **kwargs):
+    reset_index_permission("assoc")
+
+
+@receiver(post_delete, sender=AssocPermission)
+def post_delete_assoc_permission_index_permission(sender, instance, **kwargs):
+    reset_index_permission("assoc")
+
+
+@receiver(post_save, sender=EventPermission)
+def post_save_event_permission_index_permission(sender, instance, **kwargs):
+    reset_index_permission("event")
+
+
+@receiver(post_delete, sender=EventPermission)
+def post_delete_event_permission_index_permission(sender, instance, **kwargs):
+    reset_index_permission("event")
+
+
+@receiver(post_save, sender=Feature)
+def post_save_feature_index_permission(sender, instance, **kwargs):
+    reset_index_permission("event")
+    reset_index_permission("assoc")
+
+
+@receiver(post_delete, sender=Feature)
+def post_delete_feature_index_permission(sender, instance, **kwargs):
+    reset_index_permission("event")
+    reset_index_permission("assoc")
+
+
+@receiver(post_save, sender=FeatureModule)
+def post_save_feature_module_index_permission(sender, instance, **kwargs):
+    reset_index_permission("event")
+    reset_index_permission("assoc")
+
+
+@receiver(post_delete, sender=FeatureModule)
+def post_delete_feature_module_index_permission(sender, instance, **kwargs):
+    reset_index_permission("event")
+    reset_index_permission("assoc")

@@ -4,16 +4,17 @@
     {% trans "Assignments" %} - {{ run }}
 {% endblock title %}
 {% block info %}
-    {% trans "This page shows character assignments to players" %}
+    {% trans "This page shows character assignments to participants" %}
 {% endblock info %}
 {% block content %}
     <h2>Personaggi</h2>
-    <table class="tablesorter writing">
+    <table id="assignments" class="go_datatable writing">
         <thead>
             <tr>
                 <th>{% trans "Character" %}</th>
                 <th>{% trans "Factions" %}</th>
                 <th>{% trans "Player" %}</th>
+                <th></th>
                 <th>{% trans "Pronoun" %}</th>
             </tr>
         </thead>
@@ -42,7 +43,7 @@
     </table>
     {% if features.questbuilder %}
         <h2>Tratti</h2>
-        <table class="tablesorter writing">
+        <table id="traits" class="go_datatable writing">
             <thead>
                 <tr>
                     <th>{% trans "Trait" %}</th>
@@ -75,7 +76,7 @@
     {% endif %}
     {% for fnum, fac in factions.items %}
         <h2>{{ fac.name }}</h2>
-        <table class="tablesorter writing">
+        <table id="faction-{{ fnum }}" class="go_datatable writing">
             <thead>
                 <tr>
                     <th>{% trans "Character" %}</th>

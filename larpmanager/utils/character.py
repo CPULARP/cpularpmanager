@@ -47,6 +47,8 @@ def get_character_relationships(ctx, restrict=True):
 
         show["factions_list"] = []
         for fac_num in show["factions"]:
+            if not fac_num or fac_num not in ctx["factions"]:
+                continue
             fac = ctx["factions"][fac_num]
             if not fac["name"] or fac["typ"] == FactionType.SECRET:
                 continue
@@ -201,6 +203,9 @@ def get_char_check(request, ctx, num, restrict=False, bypass=False):
         get_char(ctx, num, True)
         ctx["check"] = 1
         return
+
+    if ctx["char"].get("hide", False):
+        raise NotFoundError()
 
     if restrict:
         raise Http404("Not your character")

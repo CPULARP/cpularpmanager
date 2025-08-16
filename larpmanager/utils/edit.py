@@ -64,7 +64,7 @@ def save_version(el, tp, mb, dl=False):
             if not value:
                 continue
             value = html_clean(value)
-            texts.append(f"{que.display}: {value}")
+            texts.append(f"{que.name}: {value}")
 
         tv.text = "\n".join(texts)
     else:
@@ -100,7 +100,7 @@ def _get_field_value(el, que):
         return ""
 
     if que.typ in {"s", "m"}:
-        return ", ".join(c.option.display for c in WritingChoice.objects.filter(question=que, element_id=el.id))
+        return ", ".join(c.option.name for c in WritingChoice.objects.filter(question=que, element_id=el.id))
 
     return None
 
@@ -354,6 +354,8 @@ def writing_edit_cache_key(eid, typ):
 
 def writing_edit_save_ajax(form, request, ctx):
     res = {"res": "ok"}
+    if request.user.is_superuser:
+        return JsonResponse(res)
 
     eid = int(request.POST["eid"])
     if eid <= 0:

@@ -128,12 +128,12 @@ def _custom_reason_reg(ctx, invoice, member_real):
     for key in keys:
         # Look for a registration question with that name
         try:
-            question = RegistrationQuestion.objects.get(event=ctx["reg"].run.event, display__iexact=key)
+            question = RegistrationQuestion.objects.get(event=ctx["reg"].run.event, name__iexact=key)
             if question.typ in [QuestionType.SINGLE, QuestionType.MULTIPLE]:
                 aux = []
                 que = RegistrationChoice.objects.filter(question=question, reg_id=ctx["reg"].id)
                 for choice in que.select_related("option"):
-                    aux.append(choice.option.display)
+                    aux.append(choice.option.name)
                 value = ",".join(aux)
             else:
                 value = RegistrationAnswer.objects.get(question=question, reg_id=ctx["reg"].id).text

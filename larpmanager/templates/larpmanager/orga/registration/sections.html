@@ -8,7 +8,8 @@
 {% endblock info %}
 {% block content %}
     {% include "elements/header/orga.html" %}
-    <table id="registration_sections" class="tablesorter writing">
+    <table id="registration_sections"
+           class="go_datatable writing ordering_arrow">
         <thead>
             <tr>
                 <th></th>
@@ -30,7 +31,7 @@
                     <td>
                         {% for ch in el.questions.all %}
                             {% include "elements/comma.html" %}
-                            <a href="{% url 'orga_registration_form_edit' run.event.slug run.number ch.id %}">{{ ch.display }}</a>
+                            <a href="{% url 'orga_registration_form_edit' run.event.slug run.number ch.id %}">{{ ch.name }}</a>
                         {% endfor %}
                     </td>
                     <td>

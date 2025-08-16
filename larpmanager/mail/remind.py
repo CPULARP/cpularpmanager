@@ -65,7 +65,7 @@ def get_remember_membership_body(reg):
         "<br /><br />"
         + _("If we don't hear from you, we'll assume you're no longer interested in the event")
         + ". "
-        + _("Your registration will be cancelled to allow other players to take your spot")
+        + _("Your registration will be cancelled to allow other participants to take your spot")
         + "."
     )
 
@@ -125,7 +125,7 @@ def get_remember_pay_body(context, provisional, reg):
         "<br /><br />"
         + _(
             "If we don't hear from you, we'll assume you're no longer interested in the event and "
-            "will cancel your registration to make room for other players"
+            "will cancel your registration to make room for other participants"
         )
         + "."
     )
@@ -201,7 +201,7 @@ def notify_deadlines(run):
     if not result:
         return
     res = result[0]
-    if all(not v for v in res.values()):
+    if all(not v for k, v in res.items() if k != "run"):
         return
 
     elements = {

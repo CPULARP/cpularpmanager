@@ -52,7 +52,6 @@ from larpmanager.models.writing import (
     CharacterStatus,
     Faction,
     FactionType,
-    PlotCharacterRel,
     Relationship,
     TextVersion,
 )
@@ -126,7 +125,7 @@ class CharacterForm(WritingForm, BaseWritingForm):
             for key in ["player", "status"]:
                 fields_default.add(key)
                 self.reorder_field(key)
-            if event.get_config("writing_external_access", False):
+            if event.get_config("writing_external_access", False) and self.instance.pk:
                 fields_default.add("access_token")
                 self.reorder_field("access_token")
 
@@ -250,16 +249,11 @@ class OrgaCharacterForm(CharacterForm):
         if "plot" not in self.params["features"]:
             return
 
-        pcr = {}
-        for el in PlotCharacterRel.objects.filter(character=self.instance):
-            pcr[el.plot_id] = el.text
-
         self.add_char_finder = []
         self.field_link = {}
-        que = self.instance.plots.order_by("number").values_list("id", "number", "name", "text")
-        for pl in que:
-            plot = f"#{pl[1]} {pl[2]}"
-            field = f"pl_{pl[0]}"
+        for el in self.instance.get_plot_characters().order_by("plot__number"):
+            plot = f"#{el.plot.number} {el.plot.name}"
+            field = f"pl_{el.plot.id}"
             id_field = f"id_{field}"
             self.fields[field] = forms.CharField(
                 widget=WritingTinyMCE(),
@@ -267,15 +261,15 @@ class OrgaCharacterForm(CharacterForm):
                 help_text=_("This text will be added to the sheet, in the plot paragraph %(name)s") % {"name": plot},
                 required=False,
             )
-            if pl[0] in pcr:
-                self.initial[field] = pcr[pl[0]]
+            if el.text:
+                self.initial[field] = el.text
 
-            if pl[3]:
-                self.details[id_field] = pl[3]
+            if el.plot.text:
+                self.details[id_field] = el.plot.text
             self.show_link.append(id_field)
             self.add_char_finder.append(id_field)
 
-            reverse_args = [self.params["event"].slug, self.params["run"].number, pl[0]]
+            reverse_args = [self.params["event"].slug, self.params["run"].number, el.plot.id]
             self.field_link[id_field] = reverse("orga_plots_edit", args=reverse_args)
 
     def _save_plot(self, instance):
@@ -349,15 +343,15 @@ class OrgaCharacterForm(CharacterForm):
         if "relationships" not in self.params["features"]:
             return
 
-        chars_ids = [char["id"] for char in self.params["chars"].values()]
+        chars_ids = self.params["event"].get_elements(Character).values_list("pk", flat=True)
 
         rel_data = {k: v for k, v in self.data.items() if k.startswith("rel")}
         for key, value in rel_data.items():
-            match = re.match(r"rel_(\d+)_(\w+)", key)
+            match = re.match(r"rel_(\d+)", key)
             if not match:
                 continue
             ch_id = int(match.group(1))
-            rel_type = match.group(2)
+            rel_type = "direct"
 
             # check ch_id is in chars of the event
             if ch_id not in chars_ids:
@@ -464,8 +458,8 @@ class OrgaWritingQuestionForm(MyForm):
             help_texts = {
                 QuestionVisibility.SEARCHABLE: "Characters can be filtered according to this question",
                 QuestionVisibility.PUBLIC: "The answer to this question is publicly visible",
-                QuestionVisibility.PRIVATE: "The answer to this question is only visible to the player",
-                QuestionVisibility.HIDDEN: "The answer is hidden to all players",
+                QuestionVisibility.PRIVATE: "The answer to this question is only visible to the participant",
+                QuestionVisibility.HIDDEN: "The answer is hidden to all participants",
             }
 
             self.fields["visibility"].help_text = ", ".join(

@@ -74,13 +74,13 @@ async def template(live_server, page):
     await page.get_by_role("option", name="User Test - user@test.it").click()
     await page.locator("#id_Appearance_1").check()
     await page.get_by_role("button", name="Confirm", exact=True).click()
-    await page.get_by_role("gridcell", name="Configuration").get_by_role("link").click()
+    await page.locator("#one").get_by_role("link", name="Configuration").click()
     await page.get_by_role("link", name="Gallery ").click()
     await page.locator("#id_gallery_hide_signup").check()
     await page.get_by_role("button", name="Confirm", exact=True).click()
     # create new event from template
     await go_to(page, live_server, "/manage/events")
-    await page.get_by_role("link", name="New").click()
+    await page.get_by_role("link", name="New event").click()
     await page.locator("#id_name").click()
     await page.locator("#id_name").fill("from template")
     await page.locator("#id_name").press("Tab")
@@ -190,7 +190,7 @@ async def px(live_server, page):
 async def copy(live_server, page):
     # copy event
     await go_to(page, live_server, "/manage/events")
-    await page.get_by_role("link", name="New").click()
+    await page.get_by_role("link", name="New event").click()
     await page.locator("#id_name").click()
     await page.locator("#id_name").fill("copy")
     await page.locator("#id_name").press("Tab")
@@ -206,7 +206,7 @@ async def copy(live_server, page):
 
     await go_to(page, live_server, "/copy/1/manage/roles/")
     await expect(page.locator('[id="\\39 "]')).to_contain_text("User Test")
-    await expect(page.locator('[id="\\39 "]')).to_contain_text("Navigation , Factions")
+    await expect(page.locator('[id="\\39 "]')).to_contain_text("Appearance (Navigation), Writing (Factions) ")
     await go_to(page, live_server, "/copy/1/manage/config/")
 
     await page.get_by_role("link", name="Gallery ").click()
@@ -225,7 +225,7 @@ async def campaign(live_server, page):
     # create campaign
     await go_to(page, live_server, "/manage/features/79/on")
     await go_to(page, live_server, "/manage/events")
-    await page.get_by_role("link", name="New").click()
+    await page.get_by_role("link", name="New event").click()
     await page.locator("#id_name").click()
     await page.locator("#id_name").fill("campaign")
     await page.locator("#id_name").press("Tab")

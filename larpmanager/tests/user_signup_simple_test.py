@@ -81,7 +81,7 @@ async def signup(live_server, page):
     await page.get_by_role("link", name="please fill in your profile.").click()
     await page.get_by_role("checkbox", name="Authorisation").check()
     await page.get_by_role("button", name="Submit").click()
-    await expect(page.locator("#one")).to_contain_text("You are regularly signed up!")
+    await expect(page.locator("#one")).to_contain_text("Registration confirmed (Standard)")
 
     # test update of signup with no payments
     await go_to(page, live_server, "/test/1/register")
@@ -103,7 +103,7 @@ async def help_questions(live_server, page):
     # check questions
     await expect(page.locator("#one")).to_contain_text("[Test Larp] - please help me (Attachment)")
     await go_to(page, live_server, "/manage/questions")
-    await expect(page.get_by_role("grid")).to_contain_text("please help me")
+    await expect(page.locator("#one")).to_contain_text("please help me")
 
     await page.get_by_role("link", name="Answer", exact=True).click()
     await page.get_by_role("textbox", name="Text").click()

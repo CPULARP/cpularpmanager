@@ -22,6 +22,7 @@ from django.conf import settings as conf_settings
 from django.core.exceptions import ObjectDoesNotExist
 from django.db.models import Prefetch
 from django.http import Http404
+from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 
 from larpmanager.cache.feature import get_event_features
@@ -29,7 +30,6 @@ from larpmanager.cache.fields import get_event_fields_cache
 from larpmanager.cache.permission import get_event_permission_feature
 from larpmanager.cache.role import get_event_roles, has_event_permission
 from larpmanager.cache.run import get_cache_config_run, get_cache_run
-from larpmanager.models.access import EventPermission
 from larpmanager.models.event import Event, Run
 from larpmanager.models.registration import RegistrationCharacterRel
 from larpmanager.models.writing import Character, Faction, FactionType
@@ -116,7 +116,8 @@ def prepare_run(ctx):
             config_name = "show_addit"
             if config_name not in config_run:
                 config_run[config_name] = {}
-            config_run[config_name][el] = True
+            if el in ctx["features"]:
+                config_run[config_name][el] = True
 
     ctx.update(config_run)
 
@@ -232,9 +233,11 @@ def check_event_permission(request, s, n, perm=None):
     if not has_event_permission(ctx, request, s, perm):
         raise PermissionError()
     if perm:
-        (feature, tutorial) = get_event_permission_feature(perm)
+        (feature, tutorial, config) = get_event_permission_feature(perm)
         if "tutorial" not in ctx:
             ctx["tutorial"] = tutorial
+        if config and has_event_permission(ctx, request, s, "orga_config"):
+            ctx["config"] = reverse("orga_config", args=[ctx["event"].slug, ctx["run"].number, config])
         if feature != "def" and feature not in ctx["features"]:
             raise FeatureError(path=request.path, feature=feature, run=ctx["run"].id)
     get_index_event_permissions(ctx, request, s)
@@ -251,4 +254,4 @@ def get_index_event_permissions(ctx, request, slug, check=True):
         raise PermissionError()
     ctx["role_names"] = names
     features = get_event_features(ctx["event"].id)
-    ctx["event_pms"] = get_index_permissions(features, is_organizer, user_event_permissions, EventPermission)
+    ctx["event_pms"] = get_index_permissions(features, is_organizer, user_event_permissions, "event")

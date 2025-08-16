@@ -19,6 +19,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later OR Proprietary
 
 from datetime import datetime
+from decimal import Decimal, InvalidOperation
 
 from django import forms
 from django.utils.translation import gettext_lazy as _
@@ -166,7 +167,7 @@ class OrgaOutflowForm(ExeOutflowForm):
 class ExeInflowForm(MyForm):
     page_title = _("Inflows")
 
-    page_info = _("This page allows you to add or edit an event revenue other than the players' registration fee")
+    page_info = _("This page allows you to add or edit an event revenue other than the participants' registration fee")
 
     class Meta:
         model = AccountingItemInflow
@@ -354,7 +355,7 @@ class OrgaDiscountForm(MyForm):
             choices=choices,
             widget=widget,
             required=False,
-            help_text=_("Indicates the runs for which the discount is available"),
+            help_text=_("Indicates the sessions for which the discount is available"),
         )
 
         if self.instance and self.instance.pk:
@@ -441,6 +442,7 @@ class ExePaymentSettingsForm(MyForm):
         self.all_methods = self.methods
 
         self.sections = {}
+        self.fee_fields = set()
         self.payment_details = self.get_payment_details_fields()
         for method in self.methods:
             for el in self.payment_details[method.slug]:
@@ -466,6 +468,9 @@ class ExePaymentSettingsForm(MyForm):
                 if label in repl_dict:
                     label = repl_dict[label]
                 self.fields[el].label = label
+
+                if el.endswith("_fee"):
+                    self.fee_fields.add(el)
 
         res = get_payment_details(self.instance)
         for el in res:
@@ -531,3 +536,21 @@ class ExePaymentSettingsForm(MyForm):
             return first_three + masked_middle + last_three
         else:
             return data_string
+
+    def clean(self):
+        cleaned = super().clean()
+        for name in self.fee_fields:
+            val = cleaned.get(name)
+            if val in (None, ""):
+                continue
+            s = str(val).strip().replace("%", "").replace(",", ".")
+            try:
+                d = Decimal(s)
+            except InvalidOperation:
+                self.add_error(name, _("Enter a valid numeric value"))
+                continue
+            if d < 0:
+                self.add_error(name, _("Value must be greater than or equal to 0"))
+                continue
+            cleaned[name] = str(d.normalize())
+        return cleaned

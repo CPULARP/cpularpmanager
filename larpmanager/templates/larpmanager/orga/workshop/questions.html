@@ -8,7 +8,7 @@
 {% endblock info %}
 {% block content %}
     {% include "elements/header/orga.html" %}
-    <table id="workshop_questions" class="tablesorter writing">
+    <table id="workshop_questions" class="go_datatable writing">
         <thead>
             <tr>
                 <th></th>
@@ -24,7 +24,7 @@
                            qtip="{% trans "Edit" %}"><i class="fas fa-edit"></i></a>
                     </td>
                     <td>{{ el.module }}</td>
-                    <td>{{ el.display }}</td>
+                    <td>{{ el.name }}</td>
                 </tr>
             {% endfor %}
         </tbody>

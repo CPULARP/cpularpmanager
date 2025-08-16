@@ -4,11 +4,11 @@
     {% trans "Ability" %} - {{ run }}
 {% endblock title %}
 {% block info %}
-    {% trans "This page summarizes the abilities that players can purchase with px" %}
+    {% trans "This page summarizes the abilities that participants can purchase with experience points" %}
 {% endblock info %}
 {% block content %}
     {% include "elements/header/orga.html" %}
-    <table id="abilities" class="tablesorter writing">
+    <table id="abilities" class="go_datatable writing">
         <thead>
             <tr>
                 <th></th>
@@ -58,7 +58,7 @@
                         <td>
                             {% for opt in el.dependents.all %}
                                 {% include "elements/comma.html" %}
-                                {{ opt.display }}
+                                {{ opt.name }}
                             {% endfor %}
                         </td>
                     {% endif %}
