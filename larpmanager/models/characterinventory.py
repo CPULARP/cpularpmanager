@@ -36,3 +36,13 @@ class PoolBalance(models.Model):
 
     class Meta:
         unique_together = ("inventory", "pool_type")
+
+    def add(self, amount: int):
+        self.amount += amount
+        self.save()
+
+    def subtract(self, amount: int):
+        if amount > self.amount:
+            raise ValueError("Insufficient balance")
+        self.amount -= amount
+        self.save()

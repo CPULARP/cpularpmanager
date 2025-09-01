@@ -21,6 +21,10 @@ from django import forms
 from django.utils.translation import gettext_lazy as _
 
 from larpmanager.forms.base import MyForm
+from larpmanager.models.characterinventory import CharacterInventory, PoolType, PoolBalance
+from larpmanager.models.event import Event
+from larpmanager.models.writing import Character
+
 
 class CharacterInventoryBaseForm(MyForm):
     class Meta:
@@ -30,12 +34,44 @@ class CharacterInventoryBaseForm(MyForm):
         super().__init__(*args, **kwargs)
 
 
-class OrgaCharacterInventoryForm(CharacterInventoryBaseForm):
+class OrgaCharacterInventoryForm(CharacterInventoryBaseForm, forms.ModelForm):
     ##load_js = ["characters-choices"]
 
     page_title = _("Inventories")
 
     page_info = _("This page allows you to add or edit a character inventory")
 
+    owners = forms.ModelMultipleChoiceField(
+        queryset=Character.objects.all(),
+        required=False,
+        widget=forms.SelectMultiple
+    )
+
+    class Meta:
+        model = CharacterInventory
+        fields = ["name", "number", "event", "owners"]
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+
+        self.fields["owners"] = forms.MultipleChoiceField(
+            label=_("Owners"),
+            required=False,
+            choices=[(c.id, str(c)) for c in self.params["event"].get_elements(Character)],
+            widget=forms.SelectMultiple(attrs={"class": "form-control"}),
+        )
+
+    def save(self, commit=True):
+        ci = CharacterInventory(
+            name=self.cleaned_data["name"],
+            number=self.cleaned_data["number"],
+            event=Event.objects.get(id=self.cleaned_data["event"]),
+        )
+        ci.save()
+        ci.owners.set(Character.objects.filter(id__in=self.cleaned_data["owners"]))
+
+        # Automatically create one PoolBalance for every PoolType
+        for pt in PoolType.objects.all():
+            PoolBalance.objects.create(inventory=ci, pool_type=pt, amount=0)
+
+        return ci
