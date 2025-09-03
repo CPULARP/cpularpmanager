@@ -457,6 +457,17 @@ def _init_character_form_questions(custom_tps, def_tps, features, instance):
             WritingQuestion.objects.filter(event=instance, typ=el).delete()
 
 
+@receiver(post_save, sender=Character)
+def create_personal_inventory(sender, instance, created, **kwargs):
+    if created:
+        inventory = CharacterInventory.objects.create(
+            name=f"{instance.name}'s Personal Storage",
+            event=instance.event
+        )
+        inventory.owners.add(instance)
+        inventory.save()
+
+
 @receiver(post_save, sender=Registration)
 def post_save_registration_campaign(sender, instance, **kwargs):
     if not instance.member:
