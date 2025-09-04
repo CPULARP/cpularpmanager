@@ -799,5 +799,16 @@
     number: 42
     config: px
     hidden: false
-    feature: 118
-    module: 11
+    feature: 120
+    module: 16
+- model: larpmanager.eventpermission
+  pk: 84
+  fields:
+    name: Pool Types
+    descr: Manage character inventory pool types
+    slug: orga_ci_pool_types
+    number: 53
+    config: null
+    hidden: false
+    feature: 120
+    module: 16
