@@ -22,11 +22,12 @@ from django.db import models
 from django.shortcuts import redirect, render, get_object_or_404
 from django.views.decorators.http import require_POST
 
+from larpmanager.cache.role import has_event_permission
 from larpmanager.forms.characterinventory import OrgaPoolTypePxForm, OrgaCharacterInventoryForm
 from larpmanager.models.characterinventory import PoolTypeCI, CharacterInventory, InventoryTransfer
 from larpmanager.services.ci_transfer import perform_transfer
 from larpmanager.utils.edit import orga_edit
-from larpmanager.utils.event import check_event_permission
+from larpmanager.utils.event import check_event_permission, get_event_run
 
 
 @login_required
@@ -58,7 +59,8 @@ logger = logging.getLogger(__name__)
 
 @login_required
 def orga_ci_character_inventory_view(request, s, n, num):
-    ctx = check_event_permission(request, s, n, "orga_ci_character_inventory")
+    ctx = get_event_run(request, s, n, signup=True, status=True)
+    ctx["can_add_to_inventories"] = has_event_permission(request, {}, ctx["event"].slug, "orga_ci_character_inventory")
 
     ci = get_object_or_404(CharacterInventory, pk=num, event=ctx["event"])
     ctx["character_inventory"] = ci
@@ -90,10 +92,10 @@ def orga_ci_transfer(request, s, n):
         target_inventory = get_object_or_404(CharacterInventory, id=target_inventory_id)
 
     # Permission enforcement
-    if source_inventory is None and not request.user.is_staff:
-        messages.error(request, "Only staff can transfer from NPC.")
-        redirect_pk = target_inventory.id if target_inventory else 0
-        return redirect("orga_ci_character_inventory_view", s=s, n=n, num=redirect_pk)
+    # if source_inventory is None and not request.user.is_staff:
+    #     messages.error(request, "Only staff can transfer from NPC.")
+    #     redirect_pk = target_inventory.id if target_inventory else 0
+    #     return redirect("orga_ci_character_inventory_view", s=s, n=n, num=redirect_pk)
 
     # Get pool type and amount
     pool_type = get_object_or_404(PoolTypeCI, id=request.POST.get("pool_type"))

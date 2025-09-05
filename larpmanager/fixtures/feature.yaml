@@ -743,7 +743,7 @@
     after_text: Now you can set the player editing settings
     after_link: config/user_character
 - model: larpmanager.feature
-  pk: 120
+  pk: 300
   fields:
     name: Character inventory
     descr: Allows characters to have inventories

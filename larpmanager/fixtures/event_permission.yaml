@@ -799,7 +799,7 @@
     number: 51
     config: null
     hidden: false
-    feature: 120
+    feature: 300
     module: 16
 - model: larpmanager.eventpermission
   pk: 84
@@ -810,7 +810,7 @@
     number: 53
     config: null
     hidden: false
-    feature: 120
+    feature: 300
     module: 16
 - model: larpmanager.eventpermission
   pk: 85
