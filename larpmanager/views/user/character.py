@@ -587,7 +587,7 @@ def api_character_list(request, s, n):
     charList = []
 
     for char in ctx["list"]:
-        charList.append({"id": char.pk, "name": char.name})
+        charList.append({"id": char.pk, "num": char.number, "name": char.name})
 
     return JsonResponse(charList, safe=False)
 
@@ -598,6 +598,7 @@ def api_character(request, s, n, num):
     get_event_cache_all(ctx)
 
     id = ctx["character"].pk
+    number = ctx["character"].number
     name = ctx["character"].name
     abilities = ctx["character"].px_ability_list.all()
     get_character_inventory(ctx, id)
@@ -621,4 +622,4 @@ def api_character(request, s, n, num):
     for pool in pools:
         parsed_pools.append({"type": pool["type"].name, "balance": pool["balance"].amount })
 
-    return JsonResponse({"id": id, "name": name, "ability_types": parsed_abilities, "inventory": parsed_pools})
+    return JsonResponse({"id": id, "num": number, "name": name, "ability_types": parsed_abilities, "inventory": parsed_pools})
